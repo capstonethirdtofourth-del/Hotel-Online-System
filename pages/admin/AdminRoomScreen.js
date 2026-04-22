@@ -151,7 +151,7 @@ export default function AdminRoomScreen() {
 
       Alert.alert(
         "Not yet connected",
-        "Your current admin screen can confirm occupied/cancel booked rooms. If you want admin to create bookings from available rooms directly, I can wire it next."
+        ""
       );
     } finally {
       setProcessing(false);
@@ -208,7 +208,7 @@ export default function AdminRoomScreen() {
 
     Alert.alert(
       "Needs booking record",
-      "To occupy an available room directly, the admin should create a booking document first. I can add that next if you want."
+      ""
     );
   };
 
