@@ -17,6 +17,7 @@ import {
   query,
   where,
   doc,
+  addDoc,
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
@@ -149,10 +150,29 @@ export default function AdminRoomScreen() {
     try {
       setProcessing(true);
 
-      Alert.alert(
-        "Not yet connected",
-        ""
-      );
+      await addDoc(collection(db, "roomBookings"), {
+        userId: "admin",
+        userEmail: "admin",
+        userFullName: guestName.trim(),
+        userPhone: guestPhone.trim(),
+        roomId: selectedRoom.id,
+        name: selectedRoom.name,
+        price: selectedRoom.price,
+        image: selectedRoom.image,
+        amenities: selectedRoom.amenities || [],
+        roomNumber: selectedRoom.roomNumber || "",
+        guestName: guestName.trim(),
+        guestPhone: guestPhone.trim(),
+        status: "booked",
+        reservedAt: serverTimestamp(),
+      });
+
+      Alert.alert("Success", "Room booked successfully.");
+      closeRoomModal();
+      await loadData();
+    } catch (error) {
+      console.log("Error booking room:", error);
+      Alert.alert("Error", "Failed to book room.");
     } finally {
       setProcessing(false);
     }
@@ -206,10 +226,36 @@ export default function AdminRoomScreen() {
       return;
     }
 
-    Alert.alert(
-      "Needs booking record",
-      ""
-    );
+    try {
+      setProcessing(true);
+
+      await addDoc(collection(db, "roomBookings"), {
+        userId: "admin",
+        userEmail: "admin",
+        userFullName: guestName.trim(),
+        userPhone: guestPhone.trim(),
+        roomId: selectedRoom.id,
+        name: selectedRoom.name,
+        price: selectedRoom.price,
+        image: selectedRoom.image,
+        amenities: selectedRoom.amenities || [],
+        roomNumber: selectedRoom.roomNumber || "",
+        guestName: guestName.trim(),
+        guestPhone: guestPhone.trim(),
+        status: "checked-in",
+        reservedAt: serverTimestamp(),
+        checkInAt: serverTimestamp(),
+      });
+
+      Alert.alert("Success", "Room is now occupied.");
+      closeRoomModal();
+      await loadData();
+    } catch (error) {
+      console.log("Error occupying room:", error);
+      Alert.alert("Error", "Failed to occupy room.");
+    } finally {
+      setProcessing(false);
+    }
   };
 
   const handleCancelBookedRoom = async () => {
