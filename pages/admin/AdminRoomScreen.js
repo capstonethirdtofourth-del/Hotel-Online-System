@@ -142,11 +142,6 @@ export default function AdminRoomScreen() {
       return;
     }
 
-    if (!guestPhone.trim()) {
-      Alert.alert("Missing Phone Number", "Please enter the guest phone number.");
-      return;
-    }
-
     try {
       setProcessing(true);
 
@@ -154,7 +149,7 @@ export default function AdminRoomScreen() {
         userId: "admin",
         userEmail: "admin",
         userFullName: guestName.trim(),
-        userPhone: guestPhone.trim(),
+        userPhone: guestPhone.trim() || "",
         roomId: selectedRoom.id,
         name: selectedRoom.name,
         price: selectedRoom.price,
@@ -162,7 +157,7 @@ export default function AdminRoomScreen() {
         amenities: selectedRoom.amenities || [],
         roomNumber: selectedRoom.roomNumber || "",
         guestName: guestName.trim(),
-        guestPhone: guestPhone.trim(),
+        guestPhone: guestPhone.trim() || "",
         status: "booked",
         reservedAt: serverTimestamp(),
       });
@@ -186,18 +181,13 @@ export default function AdminRoomScreen() {
       return;
     }
 
-    if (!guestPhone.trim()) {
-      Alert.alert("Missing Phone Number", "Please enter the guest phone number.");
-      return;
-    }
-
     try {
       setProcessing(true);
 
       await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
         status: "checked-in",
         guestName: guestName.trim(),
-        guestPhone: guestPhone.trim(),
+        guestPhone: guestPhone.trim() || "",
         checkInAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -221,11 +211,6 @@ export default function AdminRoomScreen() {
       return;
     }
 
-    if (!guestPhone.trim()) {
-      Alert.alert("Missing Phone Number", "Please enter the guest phone number.");
-      return;
-    }
-
     try {
       setProcessing(true);
 
@@ -233,7 +218,7 @@ export default function AdminRoomScreen() {
         userId: "admin",
         userEmail: "admin",
         userFullName: guestName.trim(),
-        userPhone: guestPhone.trim(),
+        userPhone: guestPhone.trim() || "",
         roomId: selectedRoom.id,
         name: selectedRoom.name,
         price: selectedRoom.price,
@@ -241,7 +226,7 @@ export default function AdminRoomScreen() {
         amenities: selectedRoom.amenities || [],
         roomNumber: selectedRoom.roomNumber || "",
         guestName: guestName.trim(),
-        guestPhone: guestPhone.trim(),
+        guestPhone: guestPhone.trim() || "",
         status: "checked-in",
         reservedAt: serverTimestamp(),
         checkInAt: serverTimestamp(),
@@ -505,12 +490,12 @@ export default function AdminRoomScreen() {
                       placeholder="Enter guest name"
                     />
 
-                    <Text style={styles.inputLabel}>Phone Number</Text>
+                    <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
                     <TextInput
                       style={styles.input}
                       value={guestPhone}
                       onChangeText={setGuestPhone}
-                      placeholder="Enter phone number"
+                      placeholder="Enter phone number optional"
                       keyboardType="phone-pad"
                     />
 
@@ -582,12 +567,12 @@ export default function AdminRoomScreen() {
                       placeholder="Enter guest name"
                     />
 
-                    <Text style={styles.inputLabel}>Phone Number</Text>
+                    <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
                     <TextInput
                       style={styles.input}
                       value={guestPhone}
                       onChangeText={setGuestPhone}
-                      placeholder="Enter phone number"
+                      placeholder="Enter phone number optional"
                       keyboardType="phone-pad"
                     />
 

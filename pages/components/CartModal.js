@@ -88,7 +88,7 @@ export default function CartModal({
     </Modal>
   );
 }
-
+const CREAM = "#FFF8E7";
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
@@ -97,7 +97,7 @@ const styles = StyleSheet.create({
   },
 
   cartModal: {
-    backgroundColor: "#fff",
+    backgroundColor: CREAM,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 18,

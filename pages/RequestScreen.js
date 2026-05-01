@@ -169,6 +169,10 @@ export default function RequestScreen() {
       behavior={Platform.OS === "ios" ? "padding" : "height"}
     >
       <ScrollView contentContainerStyle={styles.content}>
+        <View style={styles.header}>
+          <Text style={styles.headerTitle}>Guest Request</Text>
+
+        </View>
         <Text style={styles.sectionLabel}>Select Request Type</Text>
         <FlatList
           data={requestCategories}
@@ -240,11 +244,11 @@ export default function RequestScreen() {
     </KeyboardAvoidingView>
   );
 }
-
+const CREAM = "#FFF8E7";
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f5f1eb",
+    backgroundColor: CREAM,
   },
   content: {
     padding: 20,
@@ -255,6 +259,15 @@ const styles = StyleSheet.create({
     fontWeight: "bold",
     color: "#4a2500",
     marginBottom: 10,
+  },
+  header: {
+
+  },
+  headerTitle: {
+    fontSize: 28,
+    paddingBottom: 4,
+    color: "#3d2b1f",
+    fontFamily: "Roboto",
   },
   chipListContainer: {
     paddingBottom: 10,

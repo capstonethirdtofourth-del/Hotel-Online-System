@@ -148,7 +148,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
   const getRoomBadge = (roomId) => {
     if (blockedRooms[roomId] === "checked-in") {
-      return "Currently Occupied";
+      return "Occupied";
     }
 
     if (blockedRooms[roomId] === "booked") {
@@ -181,7 +181,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   }
 
   return (
-    <View style={{ flex: 1 }}>
+    <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
         <TouchableOpacity
           activeOpacity={0.9}
@@ -189,7 +189,14 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
           onPress={() => openRoomModal(featuredRoom)}
         >
           {getRoomBadge(featuredRoom.id) && (
-            <View style={styles.occupiedBadge}>
+            <View
+              style={[
+                styles.occupiedBadge,
+                blockedRooms[featuredRoom.id] === "checked-in"
+                  ? styles.occupiedBadgeGreen
+                  : styles.bookedBadgeRed,
+              ]}
+            >
               <Text style={styles.occupiedText}>{getRoomBadge(featuredRoom.id)}</Text>
             </View>
           )}
@@ -220,7 +227,14 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
               onPress={() => openRoomModal(room)}
             >
               {getRoomBadge(room.id) && (
-                <View style={styles.occupiedBadgeSmall}>
+                <View
+                  style={[
+                    styles.occupiedBadgeSmall,
+                    blockedRooms[room.id] === "checked-in"
+                      ? styles.occupiedBadgeGreen
+                      : styles.bookedBadgeRed,
+                  ]}
+                >
                   <Text style={styles.occupiedTextSmall}>
                     {blockedRooms[room.id] === "checked-in" ? "Occupied" : "Booked"}
                   </Text>
@@ -320,8 +334,13 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
 const PRIMARY = "#6b3200";
 const SECONDARY = "#000000";
+const CREAM = "#FFF8E7";
 
 const styles = StyleSheet.create({
+  screen: {
+    flex: 1,
+    backgroundColor: CREAM,
+  },
   content: {
     padding: 16,
     paddingBottom: 20,
@@ -330,6 +349,7 @@ const styles = StyleSheet.create({
     flex: 1,
     justifyContent: "center",
     alignItems: "center",
+    backgroundColor: CREAM,
   },
   loadingText: {
     marginTop: 10,
@@ -424,7 +444,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
   },
   roomModal: {
-    backgroundColor: "#fff",
+    backgroundColor: CREAM,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 18,
@@ -511,7 +531,6 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 10,
     left: 10,
-    backgroundColor: "rgba(200,0,0,0.85)",
     paddingHorizontal: 10,
     paddingVertical: 5,
     borderRadius: 10,
@@ -526,11 +545,17 @@ const styles = StyleSheet.create({
     position: "absolute",
     top: 5,
     left: 5,
-    backgroundColor: "rgba(200,0,0,0.85)",
     paddingHorizontal: 6,
     paddingVertical: 2,
     borderRadius: 8,
     zIndex: 2,
+  },
+  occupiedBadgeGreen: {
+    backgroundColor: "rgba(34, 139, 34, 0.9)",
+  },
+
+  bookedBadgeRed: {
+    backgroundColor: "rgba(200, 0, 0, 0.85)",
   },
   occupiedTextSmall: {
     color: "#fff",

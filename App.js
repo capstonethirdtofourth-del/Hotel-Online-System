@@ -678,7 +678,8 @@ export default function App() {
 }
 
 const SECONDARY = "#6b3200";
-const BG = "#f3f3f3";
+
+const BG = "#FFF8E7";
 
 const styles = StyleSheet.create({
   container: {

@@ -7,7 +7,8 @@ import {
   TouchableOpacity,
   ActivityIndicator,
   Alert,
-  TextInput
+  TextInput,
+  Image,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -27,8 +28,12 @@ import { auth, db } from "../FirebaseConfig";
 import CartModal from "../pages/components/CartModal";
 import OrdersModal from "../pages/components/OrdersModal";
 import ItemOptionsModal from "../pages/components/ItemOptionsModal";
+import { useFonts } from "expo-font";
 
 export default function FoodMenuScreen() {
+  const [fontsLoaded] = useFonts({
+      Roboto: require("../assets/font/roboto.ttf"),
+  });
   const [categories, setCategories] = useState([]);
   const [selectedCategory, setSelectedCategory] = useState("all");
   const [search, setSearch] = useState("");
@@ -519,6 +524,14 @@ export default function FoodMenuScreen() {
   const renderMenuItem = ({ item }) => {
     return (
       <View style={styles.card}>
+        {item.image ? (
+          <Image
+            source={{ uri: item.image }}
+            style={styles.itemImage}
+            resizeMode="cover"
+          />
+        ) : null}
+
         <View style={styles.cardTop}>
           <View style={{ flex: 1 }}>
             <Text style={styles.itemName}>{item.name}</Text>
@@ -552,6 +565,13 @@ export default function FoodMenuScreen() {
     );
   };
 
+   if (!fontsLoaded) {
+    return (
+      <SafeAreaView style={styles.loadingContainer}>
+        <ActivityIndicator size="large" color="#6b3200" />
+      </SafeAreaView>
+    );
+  }
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -590,6 +610,7 @@ export default function FoodMenuScreen() {
           renderItem={renderMenuItem}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.menuList}
+          style={styles.menu}
           ListEmptyComponent={
             <View style={styles.emptyBox}>
               <Text style={styles.emptyText}>No menu items found.</Text>
@@ -651,26 +672,37 @@ export default function FoodMenuScreen() {
     </SafeAreaView>
   );
 }
-
+const CREAM = "#FFF8E7";
 const styles = StyleSheet.create({
   safe: {
     flex: 1,
-    backgroundColor: "#f8f6f3",
+    backgroundColor: CREAM,
+    paddingTop: -15,
+  },
+  menu: {
+    marginBottom: -50,
   },
   header: {
     paddingHorizontal: 16,
-    paddingTop: 8,
     paddingBottom: 12,
   },
   headerTitle: {
     fontSize: 28,
-    fontWeight: "800",
+    paddingBottom: 8,
     color: "#3d2b1f",
+    fontFamily: "Roboto",
   },
   headerSubtitle: {
     fontSize: 14,
     color: "#7a6a5f",
     marginTop: 4,
+  },
+  itemImage: {
+    width: "100%",
+    height: 160,
+    borderRadius: 14,
+    marginBottom: 12,
+    backgroundColor: "#eee3db",
   },
   searchBox: {
     marginHorizontal: 16,
@@ -691,7 +723,6 @@ const styles = StyleSheet.create({
   },
   categoriesContainer: {
     paddingHorizontal: 16,
-    paddingBottom: 8,
   },
   categoryChip: {
     backgroundColor: "#ece7e2",
@@ -715,7 +746,7 @@ const styles = StyleSheet.create({
   },
   menuList: {
     padding: 16,
-    paddingBottom: 120,
+    paddingBottom: 50,
   },
   card: {
     backgroundColor: "#fff",

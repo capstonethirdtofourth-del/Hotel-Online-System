@@ -73,7 +73,7 @@ export default function RequestsModal({
     </Modal>
   );
 }
-
+const CREAM = "#FFF8E7";
 const styles = StyleSheet.create({
   sheetOverlay: {
     flex: 1,
@@ -81,7 +81,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(0,0,0,0.35)",
   },
   sheetModal: {
-    backgroundColor: "#fff",
+    backgroundColor: CREAM,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     padding: 18,

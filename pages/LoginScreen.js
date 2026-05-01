@@ -96,24 +96,24 @@ export default function LoginScreen({ navigation }) {
 
             <Text style={styles.label}>Password</Text>
             <View style={styles.passwordWrap}>
-            <TextInput
-                style={styles.passwordInput}
-                placeholder="Enter your password"
-                value={password}
-                onChangeText={setPassword}
-                secureTextEntry={!showPassword}
-                editable={!loading}
-            />
-            <TouchableOpacity
-                onPress={() => setShowPassword(!showPassword)}
-                disabled={loading}
-            >
-                <Ionicons
-                name={showPassword ? "eye-off-outline" : "eye-outline"}
-                size={20}
-                color="#777"
-                />
-            </TouchableOpacity>
+              <TextInput
+                  style={styles.passwordInput}
+                  placeholder="Enter your password"
+                  value={password}
+                  onChangeText={setPassword}
+                  secureTextEntry={!showPassword}
+                  editable={!loading}
+              />
+              <TouchableOpacity
+                  onPress={() => setShowPassword(!showPassword)}
+                  disabled={loading}
+              >
+                  <Ionicons
+                  name={showPassword ? "eye-off-outline" : "eye-outline"}
+                  size={20}
+                  color="#777"
+                  />
+              </TouchableOpacity>
             </View>
 
             <TouchableOpacity
@@ -140,12 +140,12 @@ export default function LoginScreen({ navigation }) {
         </KeyboardAvoidingView>
   );
 }
-
+const CREAM = "#FFF8E7";
 const styles = StyleSheet.create({
   container: {
     flex: 1,
     justifyContent: "center",
-    backgroundColor: "#f7f7f7",
+    backgroundColor: CREAM,
 },
 card: {
     marginHorizontal: 20,
@@ -194,7 +194,7 @@ card: {
     marginRight: 10,
   },
   loginBtn: {
-    backgroundColor: "#111",
+    backgroundColor: "#6b4f3a",
     height: 50,
     borderRadius: 12,
     justifyContent: "center",
