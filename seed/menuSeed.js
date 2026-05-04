@@ -6,7 +6,7 @@ export const menuData = [
       // { name: "Chicharon Bulaklak", price: 190, description: "Crispy bulaklak in vinegar dipping sauces" },
       { name: "Vegetable Fritter (Ukoy)", price: 150, description: "Deep fried squash, carrots, sweet potato", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471662/Okoy_onuws5.jpg" },
       // { name: "Sisig Nachos", price: 195, description: "Nacho chips, cheese sauce, crispy sisig" },
-      { name: "Sushi Bake", prices: { small: 380, medium: 450 }, description: "Crabsticks, seaweeds, cucumber & carrots in foil pan", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Calamari_Rings_yx8cts.jpg" },
+      { name: "Sushi Bake", prices: { small: 380, medium: 450 }, description: "Crabsticks, seaweeds, cucumber & carrots in foil pan", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471667/Sushi_Baked_nvgjec.jpg" },
       { name: "Calamares", price: 220, description: "Breaded squid rings, aioli dipping", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Calamari_Rings_yx8cts.jpg" },
       // { name: "Loaded Nacho Fries", price: 195, description: "French fries, cheese sauce, meat, bacon, mayonnaise" },
       // { name: "Sizzling Tofu", price: 185, description: "Fried tofu, bell peppers, carrots, onions, mayonnaise" },

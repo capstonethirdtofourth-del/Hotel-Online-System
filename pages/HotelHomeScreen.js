@@ -10,7 +10,17 @@ import {
   Alert,
   ActivityIndicator,
 } from "react-native";
-import { collection, getDocs, query, where } from "firebase/firestore";
+import {
+  collection,
+  doc,
+  getDoc,
+  getDocs,
+  query,
+  runTransaction,
+  serverTimestamp,
+  where,
+} from "firebase/firestore";
+import { getAuth } from "firebase/auth";
 import { db } from "../FirebaseConfig";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
@@ -20,6 +30,11 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingRoom, setBookingRoom] = useState(false);
   const [blockedRooms, setBlockedRooms] = useState({});
+
+  const [ratingModalVisible, setRatingModalVisible] = useState(false);
+  const [selectedRating, setSelectedRating] = useState(0);
+  const [submittingRating, setSubmittingRating] = useState(false);
+  const [userRoomRating, setUserRoomRating] = useState(null);
 
   useEffect(() => {
     fetchRooms();
@@ -78,12 +93,172 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     }
   };
 
+  const fetchUserRoomRating = async (roomId) => {
+    try {
+      const currentUser = getAuth().currentUser;
+
+      setUserRoomRating(null);
+      setSelectedRating(0);
+
+      if (!currentUser || !roomId) return;
+
+      const ratingDocId = `${currentUser.uid}_${roomId}`;
+      const ratingRef = doc(db, "roomRatings", ratingDocId);
+      const ratingSnap = await getDoc(ratingRef);
+
+      if (ratingSnap.exists()) {
+        const ratingValue = Number(ratingSnap.data().rating) || 0;
+        setUserRoomRating(ratingValue);
+        setSelectedRating(ratingValue);
+      }
+    } catch (error) {
+      console.log("Error fetching user room rating:", error);
+    }
+  };
+
   const openRoomModal = (room) => {
     setSelectedRoom(room);
+    fetchUserRoomRating(room.id);
   };
 
   const closeRoomModal = () => {
     setSelectedRoom(null);
+    setRatingModalVisible(false);
+    setSelectedRating(0);
+    setUserRoomRating(null);
+  };
+
+  const openRatingModal = () => {
+    const currentUser = getAuth().currentUser;
+
+    if (!currentUser) {
+      Alert.alert("Login Required", "Please login first before rating a room.");
+      return;
+    }
+
+    setRatingModalVisible(true);
+  };
+
+  const handleSubmitRating = async () => {
+    if (!selectedRoom || submittingRating) return;
+
+    const currentUser = getAuth().currentUser;
+
+    if (!currentUser) {
+      Alert.alert("Login Required", "Please login first before rating a room.");
+      return;
+    }
+
+    if (selectedRating < 1 || selectedRating > 5) {
+      Alert.alert("Select Rating", "Please select 1 to 5 stars.");
+      return;
+    }
+
+    try {
+      setSubmittingRating(true);
+
+      const ratingDocId = `${currentUser.uid}_${selectedRoom.id}`;
+      const roomRef = doc(db, "rooms", selectedRoom.id);
+      const ratingRef = doc(db, "roomRatings", ratingDocId);
+
+      let updatedStats = null;
+      let ratingAction = "submitted";
+
+      await runTransaction(db, async (transaction) => {
+        const roomSnap = await transaction.get(roomRef);
+        const ratingSnap = await transaction.get(ratingRef);
+
+        if (!roomSnap.exists()) {
+          throw new Error("Room not found.");
+        }
+
+        const roomData = roomSnap.data();
+        const currentAverage = Number(roomData.rating) || 0;
+        const currentCount = Number(roomData.reviewCount) || 0;
+        const currentTotal = currentAverage * currentCount;
+
+        let newAverage = selectedRating;
+        let newReviewCount = currentCount;
+
+        if (ratingSnap.exists()) {
+          const oldRating = Number(ratingSnap.data().rating) || 0;
+          const newTotal = currentTotal - oldRating + selectedRating;
+
+          newReviewCount = currentCount || 1;
+          newAverage = newTotal / newReviewCount;
+          ratingAction = "updated";
+
+          transaction.update(ratingRef, {
+            rating: selectedRating,
+            updatedAt: serverTimestamp(),
+          });
+        } else {
+          newReviewCount = currentCount + 1;
+          const newTotal = currentTotal + selectedRating;
+          newAverage = newTotal / newReviewCount;
+
+          transaction.set(ratingRef, {
+            userId: currentUser.uid,
+            roomId: selectedRoom.id,
+            roomName: selectedRoom.name,
+            rating: selectedRating,
+            createdAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        const safeAverage = Number(newAverage.toFixed(1));
+
+        transaction.update(roomRef, {
+          rating: safeAverage,
+          reviewCount: newReviewCount,
+        });
+
+        updatedStats = {
+          rating: safeAverage,
+          reviewCount: newReviewCount,
+        };
+      });
+
+      if (updatedStats) {
+        setRooms((prevRooms) =>
+          prevRooms.map((room) =>
+            room.id === selectedRoom.id
+              ? {
+                  ...room,
+                  rating: updatedStats.rating,
+                  reviewCount: updatedStats.reviewCount,
+                }
+              : room
+          )
+        );
+
+        setSelectedRoom((prevRoom) =>
+          prevRoom
+            ? {
+                ...prevRoom,
+                rating: updatedStats.rating,
+                reviewCount: updatedStats.reviewCount,
+              }
+            : prevRoom
+        );
+      }
+
+      setUserRoomRating(selectedRating);
+      setRatingModalVisible(false);
+
+      Alert.alert(
+        ratingAction === "updated" ? "Rating Updated" : "Rating Submitted",
+        ratingAction === "updated"
+          ? "Your previous rating for this room has been updated."
+          : "Thank you for rating this room."
+      );
+    } catch (error) {
+      console.log("Error submitting rating:", error);
+      Alert.alert("Error", "Failed to submit rating.");
+    } finally {
+      setSubmittingRating(false);
+    }
   };
 
   const handleBookRoom = async () => {
@@ -158,6 +333,34 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     return null;
   };
 
+  const renderRating = (
+    rating = 0,
+    reviewCount = 0,
+    size = 14,
+    textStyle = styles.ratingTextLight
+  ) => {
+    const numericRating = Number(rating) || 0;
+    const roundedRating = Math.round(numericRating);
+
+    return (
+      <View style={styles.ratingRow}>
+        {[1, 2, 3, 4, 5].map((star) => (
+          <Ionicons
+            key={star}
+            name={star <= roundedRating ? "star" : "star-outline"}
+            size={size}
+            color="#FFD700"
+          />
+        ))}
+
+        <Text style={textStyle}>
+          {numericRating ? numericRating.toFixed(1) : "No rating"}
+          {reviewCount > 0 ? ` (${reviewCount})` : ""}
+        </Text>
+      </View>
+    );
+  };
+
   const featuredRoom = rooms[0];
   const selectedRoomStatus = blockedRooms[selectedRoom?.id];
   const selectedRoomBlocked =
@@ -212,6 +415,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
           <View style={styles.cardOverlay}>
             <Text style={styles.roomTitle}>{featuredRoom.name}</Text>
+            {renderRating(featuredRoom.rating, featuredRoom.reviewCount)}
             <Text style={styles.roomSubtitle}>
               {featuredRoom.description}
             </Text>
@@ -249,6 +453,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
               <View style={styles.smallOverlay}>
                 <Text style={styles.smallTitle}>{room.name}</Text>
+                {renderRating(room.rating, room.reviewCount, 11)}
               </View>
             </TouchableOpacity>
           ))}
@@ -281,6 +486,30 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                   <Text style={styles.modalPrice}>{selectedRoom.price}</Text>
                   <Text style={styles.modalSubtitle}>per night</Text>
                 </View>
+
+                <View style={styles.modalRatingBox}>
+                  {renderRating(
+                    selectedRoom.rating,
+                    selectedRoom.reviewCount,
+                    18,
+                    styles.ratingTextDark
+                  )}
+
+                  {userRoomRating ? (
+                    <Text style={styles.yourRatingText}>
+                      Your rating: {userRoomRating} star{userRoomRating > 1 ? "s" : ""}
+                    </Text>
+                  ) : (
+                    <Text style={styles.yourRatingText}>You have not rated this room yet.</Text>
+                  )}
+                </View>
+
+                <TouchableOpacity style={styles.rateButton} onPress={openRatingModal}>
+                  <Ionicons name="star-outline" size={18} color="#6b3200" />
+                  <Text style={styles.rateButtonText}>
+                    {userRoomRating ? "Update Rating" : "Rate Room"}
+                  </Text>
+                </TouchableOpacity>
 
                 <Text style={styles.descriptionText}>
                   {selectedRoom.description}
@@ -325,6 +554,67 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                 </TouchableOpacity>
               </ScrollView>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={ratingModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setRatingModalVisible(false)}
+      >
+        <View style={styles.ratingModalOverlay}>
+          <View style={styles.ratingModalBox}>
+            <Text style={styles.ratingModalTitle}>Rate this room</Text>
+            <Text style={styles.ratingModalSubtitle}>{selectedRoom?.name}</Text>
+
+            <View style={styles.ratingStarsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity
+                  key={star}
+                  onPress={() => setSelectedRating(star)}
+                  disabled={submittingRating}
+                >
+                  <Ionicons
+                    name={star <= selectedRating ? "star" : "star-outline"}
+                    size={42}
+                    color="#FFD700"
+                  />
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={styles.selectedRatingText}>
+              {selectedRating > 0
+                ? `${selectedRating} star${selectedRating > 1 ? "s" : ""} selected`
+                : "Select your rating"}
+            </Text>
+
+            <TouchableOpacity
+              style={[
+                styles.submitRatingButton,
+                (submittingRating || selectedRating < 1) && styles.submitRatingButtonDisabled,
+              ]}
+              onPress={handleSubmitRating}
+              disabled={submittingRating || selectedRating < 1}
+            >
+              <Text style={styles.submitRatingButtonText}>
+                {submittingRating
+                  ? "Saving..."
+                  : userRoomRating
+                  ? "Update Rating"
+                  : "Submit Rating"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={styles.cancelRatingButton}
+              onPress={() => setRatingModalVisible(false)}
+              disabled={submittingRating}
+            >
+              <Text style={styles.cancelRatingButtonText}>Cancel</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
@@ -437,6 +727,49 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 10,
     fontWeight: "600",
+  },
+  ratingRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginTop: 4,
+  },
+  ratingTextLight: {
+    color: "#f3e8dc",
+    fontSize: 11,
+    fontWeight: "600",
+    marginLeft: 5,
+  },
+  ratingTextDark: {
+    color: "#3d3128",
+    fontSize: 13,
+    fontWeight: "700",
+    marginLeft: 6,
+  },
+  modalRatingBox: {
+    marginBottom: 10,
+  },
+  yourRatingText: {
+    marginTop: 5,
+    color: "#7a6d63",
+    fontSize: 12,
+    fontWeight: "500",
+  },
+  rateButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#f7f2ed",
+    borderWidth: 1,
+    borderColor: "#e0c7ad",
+    paddingVertical: 11,
+    borderRadius: 14,
+    marginBottom: 16,
+  },
+  rateButtonText: {
+    marginLeft: 8,
+    color: PRIMARY,
+    fontSize: 15,
+    fontWeight: "800",
   },
   modalOverlay: {
     flex: 1,
@@ -553,7 +886,6 @@ const styles = StyleSheet.create({
   occupiedBadgeGreen: {
     backgroundColor: "rgba(34, 139, 34, 0.9)",
   },
-
   bookedBadgeRed: {
     backgroundColor: "rgba(200, 0, 0, 0.85)",
   },
@@ -561,5 +893,67 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 9,
     fontWeight: "bold",
+  },
+  ratingModalOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "rgba(0,0,0,0.45)",
+    padding: 20,
+  },
+  ratingModalBox: {
+    width: "100%",  
+    backgroundColor: CREAM,
+    borderRadius: 22,
+    padding: 20,
+    alignItems: "center",
+  },
+  ratingModalTitle: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#2f241d",
+    marginBottom: 4,
+  },
+  ratingModalSubtitle: {
+    color: "#7a6d63",
+    fontSize: 13,
+    marginBottom: 18,
+    textAlign: "center",
+  },
+  ratingStarsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  selectedRatingText: {
+    color: "#5f5a55",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 18,
+  },
+  submitRatingButton: {
+    width: "100%",
+    backgroundColor: "#644835",
+    paddingVertical: 14,
+    borderRadius: 14,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  submitRatingButtonDisabled: {
+    opacity: 0.6,
+  },
+  submitRatingButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  cancelRatingButton: {
+    paddingVertical: 8,
+  },
+  cancelRatingButtonText: {
+    color: "#7a6d63",
+    fontSize: 14,
+    fontWeight: "700",
   },
 });

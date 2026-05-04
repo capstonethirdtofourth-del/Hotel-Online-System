@@ -7,6 +7,9 @@ import {
   ActivityIndicator,
   Alert,
   Pressable,
+  Image,
+  ScrollView,
+  useWindowDimensions,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
@@ -41,6 +44,89 @@ import AdminRoomScreen from "./pages/admin/AdminRoomScreen";
 import AdminRequestScreen from "./pages/admin/AdminRequestScreen";
 
 const Stack = createNativeStackNavigator();
+
+const LANDING_MAIN_IMAGE = require("./assets/images/landing.png");
+const LANDING_PROMO_IMAGE = require("./assets/images/landing-promo.png");
+function LandingPageScreen({ onGoRooms, onGoFoodMenu }) {
+  const { width } = useWindowDimensions();
+
+  const mainImageSize = Image.resolveAssetSource(LANDING_MAIN_IMAGE);
+  const promoImageSize = Image.resolveAssetSource(LANDING_PROMO_IMAGE);
+
+  const mainImageHeight = width * (mainImageSize.height / mainImageSize.width);
+  const promoImageHeight = width * (promoImageSize.height / promoImageSize.width);
+
+  return (
+    <ScrollView
+      style={styles.landingScroll}
+      contentContainerStyle={styles.landingContent}
+      showsVerticalScrollIndicator={false}
+    >
+      <Image
+        source={LANDING_MAIN_IMAGE}
+        style={[
+          styles.fullLandingImage,
+          {
+            width: width,
+            height: mainImageHeight,
+          },
+        ]}
+        resizeMode="contain"
+      />
+
+      <View style={styles.landingWelcomeCard}>
+        <Text style={styles.landingSmallText}>Welcome to</Text>
+        <Text style={styles.landingTitle}>H&K Home Kafe</Text>
+
+        <Text style={styles.landingDescription}>
+          Comfortable stay, cozy rooms, and relaxing ambiance.
+        </Text>
+
+        <View style={styles.landingLocationBox}>
+          <Ionicons name="location" size={20} color="#6b3200" />
+          <Text style={styles.landingLocationText}>
+            Diversion Road, San Leonardo, beside San Leonardo Municipal Hall
+          </Text>
+        </View>
+
+        <View style={styles.landingButtonRow}>
+          <TouchableOpacity style={styles.landingPrimaryButton} onPress={onGoRooms}>
+            <Ionicons name="bed-outline" size={20} color="#fff" />
+            <Text style={styles.landingPrimaryButtonText}>View Rooms</Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity style={styles.landingSecondaryButton} onPress={onGoFoodMenu}>
+            <Ionicons name="restaurant-outline" size={20} color="#6b3200" />
+            <Text style={styles.landingSecondaryButtonText}>Food Menu</Text>
+          </TouchableOpacity>
+        </View>
+      </View>
+
+      <Image
+        source={LANDING_PROMO_IMAGE}
+        style={[
+          styles.fullPromoImage,
+          {
+            width: width,
+            height: promoImageHeight,
+          },
+        ]}
+        resizeMode="contain"
+      />
+
+      <View style={styles.landingFooter}>
+        <View style={styles.footerHomeIcon}>
+          <Ionicons name="home-outline" size={24} color="#d6a447" />
+        </View>
+
+        <Text style={styles.footerTitle}>Your home away from home.</Text>
+        <Text style={styles.footerText}>
+          Perfect for business, family, or leisure stays.
+        </Text>
+      </View>
+    </ScrollView>
+  );
+}
 
 function MainLayout({
   navigation,
@@ -91,23 +177,78 @@ function MainLayout({
       <View style={styles.pageContent}>{children}</View>
 
       <View style={styles.bottomNav}>
-        <TouchableOpacity style={styles.navItem} onPress={() => onChangeScreen("Home")}>
-          <MaterialCommunityIcons name="bed-king-outline" size={24} color="#fff" />
-          <Text style={[styles.navText, activeScreen === "Home" && styles.activeNavText]}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => onChangeScreen("Landing")}
+        >
+          <Ionicons
+            name="home-outline"
+            size={23}
+            color={activeScreen === "Landing" ? "#ffd37a" : "#fff"}
+          />
+          <Text
+            style={[
+              styles.navText,
+              activeScreen === "Landing" && styles.activeNavText,
+            ]}
+          >
+            Home
+          </Text>
+        </TouchableOpacity>
+
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => onChangeScreen("Rooms")}
+        >
+          <MaterialCommunityIcons
+            name="bed-king-outline"
+            size={23}
+            color={activeScreen === "Rooms" ? "#ffd37a" : "#fff"}
+          />
+          <Text
+            style={[
+              styles.navText,
+              activeScreen === "Rooms" && styles.activeNavText,
+            ]}
+          >
             Rooms
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => onChangeScreen("FoodMenu")}>
-          <Ionicons name="restaurant-outline" size={24} color="#fff" />
-          <Text style={[styles.navText, activeScreen === "FoodMenu" && styles.activeNavText]}>
-            Food Menu
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => onChangeScreen("FoodMenu")}
+        >
+          <Ionicons
+            name="restaurant-outline"
+            size={23}
+            color={activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
+          />
+          <Text
+            style={[
+              styles.navText,
+              activeScreen === "FoodMenu" && styles.activeNavText,
+            ]}
+          >
+            Food
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity style={styles.navItem} onPress={() => onChangeScreen("Request")}>
-          <Feather name="edit" size={22} color="#fff" />
-          <Text style={[styles.navText, activeScreen === "Request" && styles.activeNavText]}>
+        <TouchableOpacity
+          style={styles.navItem}
+          onPress={() => onChangeScreen("Request")}
+        >
+          <Feather
+            name="edit"
+            size={21}
+            color={activeScreen === "Request" ? "#ffd37a" : "#fff"}
+          />
+          <Text
+            style={[
+              styles.navText,
+              activeScreen === "Request" && styles.activeNavText,
+            ]}
+          >
             Request
           </Text>
         </TouchableOpacity>
@@ -131,7 +272,18 @@ function MainLayout({
                 style={styles.menuItem}
                 onPress={() => {
                   setMenuVisible(false);
-                  onChangeScreen("Home");
+                  onChangeScreen("Landing");
+                }}
+              >
+                <Ionicons name="home-outline" size={22} color="#4b3a2f" />
+                <Text style={styles.menuText}>Home</Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={styles.menuItem}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onChangeScreen("Rooms");
                 }}
               >
                 <MaterialCommunityIcons name="bed-king-outline" size={22} color="#4b3a2f" />
@@ -209,7 +361,7 @@ function MainShell({
   onOpenInfo,
   roomStatusRefreshKey,
 }) {
-  const [activeScreen, setActiveScreen] = useState("Home");
+  const [activeScreen, setActiveScreen] = useState("Landing");
 
   const isAdmin = userData?.role === "admin";
 
@@ -218,23 +370,31 @@ function MainShell({
       switch (activeScreen) {
         case "Request":
           return <AdminRequestScreen />;
-        case "Home":
+        case "Landing":
+        case "Rooms":
         default:
           return <AdminRoomScreen />;
       }
     }
 
     switch (activeScreen) {
-      case "FoodMenu":
-        return <FoodMenuScreen />;
-      case "Request":
-        return <RequestScreen />;
-      case "Home":
-      default:
+      case "Rooms":
         return (
           <HotelHomeScreen
             onBookRoom={onBookRoom}
             roomStatusRefreshKey={roomStatusRefreshKey}
+          />
+        );
+      case "FoodMenu":
+        return <FoodMenuScreen />;
+      case "Request":
+        return <RequestScreen />;
+      case "Landing":
+      default:
+        return (
+          <LandingPageScreen
+            onGoRooms={() => setActiveScreen("Rooms")}
+            onGoFoodMenu={() => setActiveScreen("FoodMenu")}
           />
         );
     }
@@ -678,7 +838,6 @@ export default function App() {
 }
 
 const SECONDARY = "#6b3200";
-
 const BG = "#FFF8E7";
 
 const styles = StyleSheet.create({
@@ -704,9 +863,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-  menuButton: {
-    marginRight: 14,
-  },
   headerTitle: {
     color: "#ffffff",
     fontSize: 23,
@@ -717,25 +873,190 @@ const styles = StyleSheet.create({
   pageContent: {
     flex: 1,
   },
+
+  landingScroll: {
+    flex: 1,
+    backgroundColor: BG,
+  },
+  landingContent: {
+    padding: 14,
+    paddingBottom: 24,
+  },
+  landingHeroCard: {
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#d6a447",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  landingMainImage: {
+    width: "100%",
+    height: 650,
+    backgroundColor: "#fff8e7",
+  },
+  landingWelcomeCard: {
+    marginTop: 16,
+    backgroundColor: "#fffaf0",
+    borderRadius: 22,
+    padding: 18,
+    borderWidth: 1,
+    borderColor: "#e2c17c",
+    shadowColor: "#000",
+    shadowOpacity: 0.08,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  landingSmallText: {
+    textAlign: "center",
+    color: "#9d6a1f",
+    fontSize: 15,
+    fontStyle: "italic",
+  },
+  landingTitle: {
+    textAlign: "center",
+    color: "#2b1d13",
+    fontSize: 33,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  landingDescription: {
+    textAlign: "center",
+    color: "#4b3a2f",
+    fontSize: 15,
+    lineHeight: 22,
+    marginTop: 8,
+  },
+  landingLocationBox: {
+    marginTop: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f1d28a",
+    paddingVertical: 10,
+    paddingHorizontal: 12,
+    borderRadius: 16,
+  },
+  landingLocationText: {
+    flex: 1,
+    marginLeft: 8,
+    color: "#3b291b",
+    fontSize: 13,
+    lineHeight: 18,
+    fontWeight: "600",
+  },
+  landingButtonRow: {
+    marginTop: 16,
+    flexDirection: "row",
+    gap: 10,
+  },
+  landingPrimaryButton: {
+    flex: 1,
+    backgroundColor: SECONDARY,
+    borderRadius: 16,
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#d6a447",
+  },
+  landingPrimaryButtonText: {
+    marginLeft: 7,
+    color: "#fff",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  landingSecondaryButton: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    paddingVertical: 13,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "#d6a447",
+  },
+  landingSecondaryButtonText: {
+    marginLeft: 7,
+    color: SECONDARY,
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  landingPromoCard: {
+    marginTop: 16,
+    backgroundColor: "#fff",
+    borderRadius: 24,
+    overflow: "hidden",
+    borderWidth: 1,
+    borderColor: "#d6a447",
+    shadowColor: "#000",
+    shadowOpacity: 0.18,
+    shadowRadius: 8,
+    elevation: 5,
+  },
+  landingPromoImage: {
+    width: "100%",
+    height: 580,
+    backgroundColor: "#fff8e7",
+  },
+  landingFooter: {
+    marginTop: 16,
+    backgroundColor: "#2a170d",
+    borderRadius: 22,
+    paddingVertical: 22,
+    paddingHorizontal: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#d6a447",
+  },
+  footerHomeIcon: {
+    width: 46,
+    height: 46,
+    borderRadius: 23,
+    borderWidth: 1,
+    borderColor: "#d6a447",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  footerTitle: {
+    color: "#d6a447",
+    fontSize: 18,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  footerText: {
+    color: "#fff8e7",
+    fontSize: 14,
+    textAlign: "center",
+    marginTop: 4,
+  },
+
   bottomNav: {
     backgroundColor: SECONDARY,
     flexDirection: "row",
     justifyContent: "space-around",
     alignItems: "center",
-    paddingVertical: 12,
+    paddingVertical: 10,
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
   },
   navItem: {
+    flex: 1,
     alignItems: "center",
   },
   navText: {
     color: "#fff",
-    fontSize: 12,
+    fontSize: 11,
     marginTop: 4,
   },
   activeNavText: {
-    fontWeight: "700",
+    color: "#ffd37a",
+    fontWeight: "800",
   },
   modalOverlay: {
     flex: 1,
@@ -801,4 +1122,52 @@ const styles = StyleSheet.create({
     color: "#b91c1c",
     fontWeight: "600",
   },
+ landingScroll: {
+  flex: 1,
+  backgroundColor: BG,
+},
+
+landingContent: {
+  paddingTop: 0,
+  paddingBottom: 0,
+  alignItems: "center",
+},
+
+fullLandingImage: {
+  marginTop: 0,
+  marginHorizontal: 0,
+  backgroundColor: BG,
+},
+
+fullPromoImage: {
+  marginTop: 0,
+  marginHorizontal: 0,
+  backgroundColor: BG,
+},
+landingWelcomeCard: {
+  marginHorizontal: 16,
+  marginVertical: 14,
+  backgroundColor: "#fffaf0",
+  borderRadius: 22,
+  padding: 18,
+  borderWidth: 1,
+  borderColor: "#e2c17c",
+  shadowColor: "#000",
+  shadowOpacity: 0.08,
+  shadowRadius: 6,
+  elevation: 3,
+},
+
+landingFooter: {
+  marginHorizontal: 16,
+  marginTop: 16,
+  marginBottom: 20,
+  backgroundColor: "#2a170d",
+  borderRadius: 22,
+  paddingVertical: 22,
+  paddingHorizontal: 16,
+  alignItems: "center",
+  borderWidth: 1,
+  borderColor: "#d6a447",
+},
 });
