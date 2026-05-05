@@ -10,7 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
-const LANDING_MAIN_IMAGE = require("../assets/images/landing.png");
+const LANDING_MAIN_IMAGE = require("../assets/images/landing-bg.png");
 const LANDING_PROMO_IMAGE = require("../assets/images/landing-promo.png");
 
 const SECONDARY = "#6b3200";
@@ -45,7 +45,7 @@ export default function LandingPageScreen({ onGoRooms, onGoFoodMenu }) {
 
       <View style={styles.landingWelcomeCard}>
         <Text style={styles.landingSmallText}>Welcome to</Text>
-        <Text style={styles.landingTitle}>H&K Home Kafe</Text>
+        <Text style={styles.landingTitle}>H&K Hotel and Home Kafe</Text>
 
         <Text style={styles.landingDescription}>
           Comfortable stay, cozy rooms, and relaxing ambiance.
@@ -57,41 +57,6 @@ export default function LandingPageScreen({ onGoRooms, onGoFoodMenu }) {
             Diversion Road, San Leonardo, beside San Leonardo Municipal Hall
           </Text>
         </View>
-
-        <View style={styles.landingButtonRow}>
-          <TouchableOpacity style={styles.landingPrimaryButton} onPress={onGoRooms}>
-            <Ionicons name="bed-outline" size={20} color="#fff" />
-            <Text style={styles.landingPrimaryButtonText}>View Rooms</Text>
-          </TouchableOpacity>
-
-          <TouchableOpacity style={styles.landingSecondaryButton} onPress={onGoFoodMenu}>
-            <Ionicons name="restaurant-outline" size={20} color={SECONDARY} />
-            <Text style={styles.landingSecondaryButtonText}>Food Menu</Text>
-          </TouchableOpacity>
-        </View>
-      </View>
-
-      <Image
-        source={LANDING_PROMO_IMAGE}
-        style={[
-          styles.fullPromoImage,
-          {
-            width: width,
-            height: promoImageHeight,
-          },
-        ]}
-        resizeMode="contain"
-      />
-
-      <View style={styles.landingFooter}>
-        <View style={styles.footerHomeIcon}>
-          <Ionicons name="home-outline" size={24} color="#d6a447" />
-        </View>
-
-        <Text style={styles.footerTitle}>Your home away from home.</Text>
-        <Text style={styles.footerText}>
-          Perfect for business, family, or leisure stays.
-        </Text>
       </View>
     </ScrollView>
   );
@@ -148,6 +113,7 @@ const styles = StyleSheet.create({
     fontSize: 33,
     fontWeight: "900",
     marginTop: 2,
+    fontFamily: "Pacifico",
   },
 
   landingDescription: {

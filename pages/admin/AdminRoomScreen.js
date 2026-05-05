@@ -34,7 +34,13 @@ export default function AdminRoomScreen() {
 
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
-  const [processing, setProcessing] = useState(false);
+  const [processingAction, setProcessingAction] = useState(null);
+
+  const isProcessing = processingAction !== null;
+  const isBooking = processingAction === "book";
+  const isOccupying = processingAction === "occupy";
+  const isCancelling = processingAction === "cancel";
+  const isCheckingOut = processingAction === "checkout";
 
   useEffect(() => {
     loadData();
@@ -131,11 +137,12 @@ export default function AdminRoomScreen() {
     setSelectedRoom(null);
     setGuestName("");
     setGuestPhone("");
+    setProcessingAction(null);
     setRoomModalVisible(false);
   };
 
   const handleBookRoom = async () => {
-    if (!selectedRoom || processing) return;
+    if (!selectedRoom || isProcessing) return;
 
     if (!guestName.trim()) {
       Alert.alert("Missing Guest Name", "Please enter the guest name.");
@@ -143,7 +150,7 @@ export default function AdminRoomScreen() {
     }
 
     try {
-      setProcessing(true);
+      setProcessingAction("book");
 
       await addDoc(collection(db, "roomBookings"), {
         userId: "admin",
@@ -169,12 +176,12 @@ export default function AdminRoomScreen() {
       console.log("Error booking room:", error);
       Alert.alert("Error", "Failed to book room.");
     } finally {
-      setProcessing(false);
+      setProcessingAction(null);
     }
   };
 
   const handleOccupyBookedRoom = async () => {
-    if (!selectedRoom?.booking || processing) return;
+    if (!selectedRoom?.booking || isProcessing) return;
 
     if (!guestName.trim()) {
       Alert.alert("Missing Guest Name", "Please enter the guest name.");
@@ -182,7 +189,7 @@ export default function AdminRoomScreen() {
     }
 
     try {
-      setProcessing(true);
+      setProcessingAction("occupy");
 
       await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
         status: "checked-in",
@@ -199,12 +206,12 @@ export default function AdminRoomScreen() {
       console.log("Error occupying booked room:", error);
       Alert.alert("Error", "Failed to occupy room.");
     } finally {
-      setProcessing(false);
+      setProcessingAction(null);
     }
   };
 
   const handleOccupyAvailableRoom = async () => {
-    if (!selectedRoom || processing) return;
+    if (!selectedRoom || isProcessing) return;
 
     if (!guestName.trim()) {
       Alert.alert("Missing Guest Name", "Please enter the guest name.");
@@ -212,7 +219,7 @@ export default function AdminRoomScreen() {
     }
 
     try {
-      setProcessing(true);
+      setProcessingAction("occupy");
 
       await addDoc(collection(db, "roomBookings"), {
         userId: "admin",
@@ -239,12 +246,12 @@ export default function AdminRoomScreen() {
       console.log("Error occupying room:", error);
       Alert.alert("Error", "Failed to occupy room.");
     } finally {
-      setProcessing(false);
+      setProcessingAction(null);
     }
   };
 
   const handleCancelBookedRoom = async () => {
-    if (!selectedRoom?.booking || processing) return;
+    if (!selectedRoom?.booking || isProcessing) return;
 
     Alert.alert("Cancel Booking", "Do you want to cancel this booking?", [
       { text: "No", style: "cancel" },
@@ -253,7 +260,7 @@ export default function AdminRoomScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            setProcessing(true);
+            setProcessingAction("cancel");
 
             await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
               status: "cancelled",
@@ -268,7 +275,7 @@ export default function AdminRoomScreen() {
             console.log("Error cancelling booking:", error);
             Alert.alert("Error", "Failed to cancel booking.");
           } finally {
-            setProcessing(false);
+            setProcessingAction(null);
           }
         },
       },
@@ -276,7 +283,7 @@ export default function AdminRoomScreen() {
   };
 
   const handleCheckoutOccupiedRoom = async () => {
-    if (!selectedRoom?.booking || processing) return;
+    if (!selectedRoom?.booking || isProcessing) return;
 
     Alert.alert("Check Out", "Mark this room as checked out?", [
       { text: "No", style: "cancel" },
@@ -285,7 +292,7 @@ export default function AdminRoomScreen() {
         style: "destructive",
         onPress: async () => {
           try {
-            setProcessing(true);
+            setProcessingAction("checkout");
 
             await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
               status: "checked-out",
@@ -300,7 +307,7 @@ export default function AdminRoomScreen() {
             console.log("Error checking out room:", error);
             Alert.alert("Error", "Failed to check out room.");
           } finally {
-            setProcessing(false);
+            setProcessingAction(null);
           }
         },
       },
@@ -500,12 +507,12 @@ export default function AdminRoomScreen() {
                     />
 
                     <TouchableOpacity
-                      style={[styles.actionButton, processing && styles.disabledButton]}
+                      style={[styles.actionButton, isProcessing && styles.disabledButton]}
                       onPress={handleBookRoom}
-                      disabled={processing}
+                      disabled={isProcessing}
                     >
                       <Text style={styles.actionButtonText}>
-                        {processing ? "Processing..." : "Book"}
+                        {isBooking ? "Processing..." : "Book"}
                       </Text>
                     </TouchableOpacity>
 
@@ -513,12 +520,12 @@ export default function AdminRoomScreen() {
                       style={[
                         styles.actionButton,
                         styles.secondaryButton,
-                        processing && styles.disabledButton,
+                        isProcessing && styles.disabledButton,
                       ]}
                       onPress={handleOccupyAvailableRoom}
-                      disabled={processing}
+                      disabled={isProcessing}
                     >
-                      <Text style={styles.actionButtonText}>Occupy</Text>
+                      <Text style={styles.actionButtonText}>{isOccupying ? "Processing..." : "Occupy"}</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -577,12 +584,12 @@ export default function AdminRoomScreen() {
                     />
 
                     <TouchableOpacity
-                      style={[styles.actionButton, processing && styles.disabledButton]}
+                      style={[styles.actionButton, isProcessing && styles.disabledButton]}
                       onPress={handleOccupyBookedRoom}
-                      disabled={processing}
+                      disabled={isProcessing}
                     >
                       <Text style={styles.actionButtonText}>
-                        {processing ? "Processing..." : "Occupy"}
+                        {isOccupying ? "Processing..." : "Occupy"}
                       </Text>
                     </TouchableOpacity>
 
@@ -590,12 +597,12 @@ export default function AdminRoomScreen() {
                       style={[
                         styles.actionButton,
                         styles.cancelButton,
-                        processing && styles.disabledButton,
+                        isProcessing && styles.disabledButton,
                       ]}
                       onPress={handleCancelBookedRoom}
-                      disabled={processing}
+                      disabled={isProcessing}
                     >
-                      <Text style={styles.actionButtonText}>Cancel</Text>
+                      <Text style={styles.actionButtonText}>{isCancelling ? "Cancelling..." : "Cancel"}</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -649,12 +656,12 @@ export default function AdminRoomScreen() {
                       style={[
                         styles.actionButton,
                         styles.checkoutButton,
-                        processing && styles.disabledButton,
+                        isProcessing && styles.disabledButton,
                       ]}
                       onPress={handleCheckoutOccupiedRoom}
-                      disabled={processing}
+                      disabled={isProcessing}
                     >
-                      <Text style={styles.actionButtonText}>Check Out</Text>
+                      <Text style={styles.actionButtonText}>{isCheckingOut ? "Processing..." : "Check Out"}</Text>
                     </TouchableOpacity>
                   </>
                 )}
@@ -825,7 +832,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   actionButton: {
-    backgroundColor: "#6b3200",
+    backgroundColor: "#6d4e3a",
     paddingVertical: 12,
     borderRadius: 10,
     alignItems: "center",
@@ -838,7 +845,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#b84040",
   },
   checkoutButton: {
-    backgroundColor: "#222",
+    backgroundColor: "#6d4e3a",
   },
   actionButtonText: {
     color: "#fff",
