@@ -54,6 +54,8 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         ...docSnap.data(),
       }));
 
+      console.log("Fetched rooms:", data.length, data.map((room) => room.name));
+
       setRooms(data);
     } catch (error) {
       console.log("Error fetching rooms:", error);
@@ -291,6 +293,19 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
       closeRoomModal();
       await fetchBlockedRooms();
+    } catch (error) {
+      console.log("Error booking room:", error);
+
+      const errorMessage =
+        error?.message ||
+        "Failed to book this room. Please try again.";
+
+      Alert.alert(
+        "Booking Error",
+        errorMessage.includes("User document not found")
+          ? "Your user profile document is missing in Firestore. Create the users/{uid} document when the user signs up, then try booking again."
+          : errorMessage
+      );
     } finally {
       setBookingRoom(false);
     }
@@ -361,7 +376,41 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     );
   };
 
-  const featuredRoom = rooms[0];
+  const renderRoomCard = (room) => (
+    <TouchableOpacity
+      key={room.id}
+      style={styles.smallCard}
+      activeOpacity={0.9}
+      onPress={() => openRoomModal(room)}
+    >
+      {getRoomBadge(room.id) && (
+        <View
+          style={[
+            styles.occupiedBadgeSmall,
+            blockedRooms[room.id] === "checked-in"
+              ? styles.occupiedBadgeGreen
+              : styles.bookedBadgeRed,
+          ]}
+        >
+          <Text style={styles.occupiedTextSmall}>
+            {blockedRooms[room.id] === "checked-in" ? "Occupied" : "Booked"}
+          </Text>
+        </View>
+      )}
+
+      <Image source={{ uri: room.image }} style={styles.smallImage} />
+
+      <View style={styles.smallPriceTag}>
+        <Text style={styles.smallPriceText}>{room.price}</Text>
+      </View>
+
+      <View style={styles.smallOverlay}>
+        <Text style={styles.smallTitle}>{room.name}</Text>
+        {renderRating(room.rating, room.reviewCount, 11)}
+      </View>
+    </TouchableOpacity>
+  );
+
   const selectedRoomStatus = blockedRooms[selectedRoom?.id];
   const selectedRoomBlocked =
     selectedRoomStatus === "booked" || selectedRoomStatus === "checked-in";
@@ -386,78 +435,14 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   return (
     <View style={styles.screen}>
       <ScrollView contentContainerStyle={styles.content}>
-        <TouchableOpacity
-          activeOpacity={0.9}
-          style={styles.featuredCard}
-          onPress={() => openRoomModal(featuredRoom)}
-        >
-          {getRoomBadge(featuredRoom.id) && (
-            <View
-              style={[
-                styles.occupiedBadge,
-                blockedRooms[featuredRoom.id] === "checked-in"
-                  ? styles.occupiedBadgeGreen
-                  : styles.bookedBadgeRed,
-              ]}
-            >
-              <Text style={styles.occupiedText}>{getRoomBadge(featuredRoom.id)}</Text>
-            </View>
-          )}
+        <Text style={styles.roomsHeader}>Rooms</Text>
+        <Text style={styles.roomsSubHeader}>
+          {rooms.length} room{rooms.length > 1 ? "s" : ""} available
+        </Text>
 
-          <Image
-            source={{ uri: featuredRoom.image }}
-            style={styles.featuredImage}
-          />
-
-          <View style={styles.priceTag}>
-            <Text style={styles.priceText}>{featuredRoom.price}</Text>
-          </View>
-
-          <View style={styles.cardOverlay}>
-            <Text style={styles.roomTitle}>{featuredRoom.name}</Text>
-            {renderRating(featuredRoom.rating, featuredRoom.reviewCount)}
-            <Text style={styles.roomSubtitle}>
-              {featuredRoom.description}
-            </Text>
-          </View>
-        </TouchableOpacity>
-
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {rooms.slice(1).map((room) => (
-            <TouchableOpacity
-              key={room.id}
-              style={styles.smallCard}
-              activeOpacity={0.9}
-              onPress={() => openRoomModal(room)}
-            >
-              {getRoomBadge(room.id) && (
-                <View
-                  style={[
-                    styles.occupiedBadgeSmall,
-                    blockedRooms[room.id] === "checked-in"
-                      ? styles.occupiedBadgeGreen
-                      : styles.bookedBadgeRed,
-                  ]}
-                >
-                  <Text style={styles.occupiedTextSmall}>
-                    {blockedRooms[room.id] === "checked-in" ? "Occupied" : "Booked"}
-                  </Text>
-                </View>
-              )}
-
-              <Image source={{ uri: room.image }} style={styles.smallImage} />
-
-              <View style={styles.smallPriceTag}>
-                <Text style={styles.smallPriceText}>{room.price}</Text>
-              </View>
-
-              <View style={styles.smallOverlay}>
-                <Text style={styles.smallTitle}>{room.name}</Text>
-                {renderRating(room.rating, room.reviewCount, 11)}
-              </View>
-            </TouchableOpacity>
-          ))}
-        </ScrollView>
+        <View style={styles.roomsGrid}>
+          {rooms.map(renderRoomCard)}
+        </View>
       </ScrollView>
 
       <Modal
@@ -635,6 +620,23 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 20,
   },
+  roomsHeader: {
+    color: "#2f241d",
+    fontSize: 24,
+    fontWeight: "900",
+    marginBottom: 4,
+  },
+  roomsSubHeader: {
+    color: "#7a6d63",
+    fontSize: 13,
+    fontWeight: "600",
+    marginBottom: 14,
+  },
+  roomsGrid: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    justifyContent: "space-between",
+  },
   loaderBox: {
     flex: 1,
     justifyContent: "center",
@@ -690,11 +692,11 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   smallCard: {
-    width: 150,
-    height: 110,
+    width: "48%",
+    height: 135,
     borderRadius: 14,
     overflow: "hidden",
-    marginRight: 12,
+    marginBottom: 12,
     backgroundColor: "#ddd",
   },
   smallImage: {
