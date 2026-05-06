@@ -54,6 +54,7 @@ function MainLayout({
   activeScreen,
   onChangeScreen,
   children,
+  isAdmin,
 }) {
   const [menuVisible, setMenuVisible] = useState(false);
 
@@ -92,24 +93,26 @@ function MainLayout({
       <View style={styles.pageContent}>{children}</View>
 
       <View style={styles.bottomNav}>
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => onChangeScreen("Landing")}
-        >
-          <Ionicons
-            name="home-outline"
-            size={23}
-            color={activeScreen === "Landing" ? "#ffd37a" : "#fff"}
-          />
-          <Text
-            style={[
-              styles.navText,
-              activeScreen === "Landing" && styles.activeNavText,
-            ]}
+        {!isAdmin && (
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onChangeScreen("Landing")}
           >
-            Home
-          </Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="home-outline"
+              size={23}
+              color={activeScreen === "Landing" ? "#ffd37a" : "#fff"}
+            />
+            <Text
+              style={[
+                styles.navText,
+                activeScreen === "Landing" && styles.activeNavText,
+              ]}
+            >
+              Home
+            </Text>
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.navItem}
@@ -130,24 +133,26 @@ function MainLayout({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => onChangeScreen("FoodMenu")}
-        >
-          <Ionicons
-            name="restaurant-outline"
-            size={23}
-            color={activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
-          />
-          <Text
-            style={[
-              styles.navText,
-              activeScreen === "FoodMenu" && styles.activeNavText,
-            ]}
+          <TouchableOpacity
+            style={[styles.navItem, isAdmin && styles.disabledNavItem]}
+            disabled={isAdmin}
+            onPress={() => onChangeScreen("FoodMenu")}
           >
-            Food
-          </Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="restaurant-outline"
+              size={23}
+              color={isAdmin ? "rgba(255,255,255,0.45)" : activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
+            />
+            <Text
+              style={[
+                styles.navText,
+                activeScreen === "FoodMenu" && styles.activeNavText,
+                isAdmin && styles.disabledNavText,
+              ]}
+            >
+              Food
+            </Text>
+          </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
@@ -184,36 +189,57 @@ function MainLayout({
               <Text style={styles.sideMenuTitle}>Menu</Text>
 
               <TouchableOpacity
-                style={styles.menuItem}
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
                 onPress={() => {
                   setMenuVisible(false);
                   onOpenOrders();
                 }}
               >
-                <Ionicons name="receipt-outline" size={22} color="#030303" />
-                <Text style={styles.menuText}>Orders</Text>
+                <Ionicons
+                  name="receipt-outline"
+                  size={22}
+                  color={isAdmin ? "#9ca3af" : "#030303"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Orders
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.menuItem}
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
                 onPress={() => {
                   setMenuVisible(false);
                   onOpenReservedRooms();
                 }}
               >
-                <MaterialCommunityIcons name="bed-outline" size={22} color="#4b3a2f" />
-                <Text style={styles.menuText}>Reserved Room</Text>
+                <MaterialCommunityIcons
+                  name="bed-outline"
+                  size={22}
+                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Reserved Room
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
-                style={styles.menuItem}
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
                 onPress={() => {
                   setMenuVisible(false);
                   onOpenRequests();
                 }}
               >
-                <Feather name="file-text" size={20} color="#4b3a2f" />
-                <Text style={styles.menuText}>Requests</Text>
+                <Feather
+                  name="file-text"
+                  size={20}
+                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Requests
+                </Text>
               </TouchableOpacity>
 
               <TouchableOpacity
@@ -254,26 +280,24 @@ function MainShell({
   onOpenInfo,
   roomStatusRefreshKey,
 }) {
+  const isAdmin = userData?.role === "admin";
   const [activeScreen, setActiveScreen] = useState("Landing");
 
-  const isAdmin = userData?.role === "admin";
+  useEffect(() => {
+    if (isAdmin && activeScreen === "Landing") {
+      setActiveScreen("Rooms");
+    }
+  }, [isAdmin, activeScreen]);
 
   const renderContent = () => {
     if (isAdmin) {
       switch (activeScreen) {
-        case "Rooms":
-          return <AdminRoomScreen />;
-
         case "Request":
           return <AdminRequestScreen />;
 
-        case "Landing":
+        case "Rooms":
         default:
-          return (
-            <LandingPageScreen
-              onGoRooms={() => setActiveScreen("Rooms")}
-            />
-          );
+          return <AdminRoomScreen />;
       }
     }
 
@@ -285,13 +309,10 @@ function MainShell({
             roomStatusRefreshKey={roomStatusRefreshKey}
           />
         );
-
       case "FoodMenu":
         return <FoodMenuScreen />;
-
       case "Request":
         return <RequestScreen />;
-
       case "Landing":
       default:
         return (
@@ -314,6 +335,7 @@ function MainShell({
       onOpenInfo={onOpenInfo}
       activeScreen={activeScreen}
       onChangeScreen={setActiveScreen}
+      isAdmin={isAdmin}
     >
       {renderContent()}
     </MainLayout>
@@ -742,7 +764,6 @@ export default function App() {
 
 const SECONDARY = "#6b3200";
 const BG = "#FFF8E7";
-const CREAM = "#FFF8E7";
 
 const styles = StyleSheet.create({
   container: {
@@ -799,6 +820,12 @@ const styles = StyleSheet.create({
     color: "#ffd37a",
     fontWeight: "800",
   },
+  disabledNavItem: {
+    opacity: 0.45,
+  },
+  disabledNavText: {
+    color: "rgba(255,255,255,0.45)",
+  },
   modalOverlay: {
     flex: 1,
     flexDirection: "row",
@@ -809,7 +836,7 @@ const styles = StyleSheet.create({
   },
   sideMenu: {
     width: 285,
-    backgroundColor: CREAM,
+    backgroundColor: "#fff",
     paddingTop: 58,
     paddingHorizontal: 20,
     shadowColor: "#000",
@@ -851,6 +878,12 @@ const styles = StyleSheet.create({
     fontSize: 16,
     color: "#222",
     fontWeight: "500",
+  },
+  disabledMenuItem: {
+    opacity: 0.45,
+  },
+  disabledMenuText: {
+    color: "#9ca3af",
   },
   menuDivider: {
     height: 1,
