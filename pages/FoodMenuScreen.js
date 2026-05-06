@@ -9,6 +9,7 @@ import {
   Alert,
   TextInput,
   Image,
+  Modal,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -50,6 +51,9 @@ export default function FoodMenuScreen() {
   const [userOrders, setUserOrders] = useState([]);
   const [loadingOrders, setLoadingOrders] = useState(false);
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
+  const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
+  const [previewImage, setPreviewImage] = useState(null);
+  const [previewTitle, setPreviewTitle] = useState("");
 
   useEffect(() => {
     fetchMenu();
@@ -521,15 +525,40 @@ export default function FoodMenuScreen() {
     );
   };
 
+  const openImagePreview = (item) => {
+    if (!item?.image) return;
+
+    setPreviewImage(item.image);
+    setPreviewTitle(item.name || "Food Image");
+    setImagePreviewVisible(true);
+  };
+
+  const closeImagePreview = () => {
+    setImagePreviewVisible(false);
+    setPreviewImage(null);
+    setPreviewTitle("");
+  };
+
   const renderMenuItem = ({ item }) => {
     return (
       <View style={styles.card}>
         {item.image ? (
-          <Image
-            source={{ uri: item.image }}
-            style={styles.itemImage}
-            resizeMode="cover"
-          />
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => openImagePreview(item)}
+            style={styles.imageTapBox}
+          >
+            <Image
+              source={{ uri: item.image }}
+              style={styles.itemImage}
+              resizeMode="cover"
+            />
+
+            <View style={styles.zoomBadge}>
+              <Ionicons name="expand-outline" size={16} color="#fff" />
+              <Text style={styles.zoomBadgeText}>Tap to view</Text>
+            </View>
+          </TouchableOpacity>
         ) : null}
 
         <View style={styles.cardTop}>
@@ -669,6 +698,35 @@ export default function FoodMenuScreen() {
         onCancelOrder={cancelOrder}
         cancellingOrderId={cancellingOrderId}
       />
+
+      <Modal
+        visible={imagePreviewVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={closeImagePreview}
+      >
+        <View style={styles.imagePreviewOverlay}>
+          <TouchableOpacity
+            style={styles.imagePreviewClose}
+            onPress={closeImagePreview}
+            activeOpacity={0.8}
+          >
+            <Ionicons name="close" size={28} color="#fff" />
+          </TouchableOpacity>
+
+          <Text style={styles.imagePreviewTitle}>{previewTitle}</Text>
+
+          {previewImage ? (
+            <Image
+              source={{ uri: previewImage }}
+              style={styles.imagePreviewImage}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          <Text style={styles.imagePreviewHint}>Full food image preview</Text>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -701,7 +759,6 @@ const styles = StyleSheet.create({
     width: "100%",
     height: 160,
     borderRadius: 14,
-    marginBottom: 12,
     backgroundColor: "#eee3db",
   },
   searchBox: {
@@ -876,5 +933,66 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     alignItems: "center",
     elevation: 4,
+  },
+
+  imageTapBox: {
+    position: "relative",
+    marginBottom: 12,
+  },
+  zoomBadge: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    backgroundColor: "rgba(0,0,0,0.65)",
+    borderRadius: 14,
+    paddingVertical: 6,
+    paddingHorizontal: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+  },
+  zoomBadgeText: {
+    color: "#fff",
+    fontSize: 11,
+    fontWeight: "700",
+  },
+  imagePreviewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.94)",
+    justifyContent: "center",
+    alignItems: "center",
+    paddingHorizontal: 16,
+  },
+  imagePreviewClose: {
+    position: "absolute",
+    top: 45,
+    right: 22,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(255,255,255,0.18)",
+    justifyContent: "center",
+    alignItems: "center",
+    zIndex: 10,
+  },
+  imagePreviewTitle: {
+    position: "absolute",
+    top: 95,
+    left: 20,
+    right: 20,
+    color: "#fff",
+    fontSize: 20,
+    fontWeight: "800",
+    textAlign: "center",
+  },
+  imagePreviewImage: {
+    width: "100%",
+    height: "72%",
+    borderRadius: 18,
+  },
+  imagePreviewHint: {
+    color: "#ddd",
+    fontSize: 13,
+    marginTop: 10,
   },
 });

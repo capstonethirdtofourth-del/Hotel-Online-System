@@ -673,11 +673,12 @@ export default function AdminRoomScreen() {
     </View>
   );
 }
+const CREAM = "#FFF8E7";
 
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#f6f2ee",
+    backgroundColor: CREAM,
   },
   content: {
     padding: 16,

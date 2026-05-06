@@ -187,28 +187,6 @@ function MainLayout({
                 style={styles.menuItem}
                 onPress={() => {
                   setMenuVisible(false);
-                  onChangeScreen("Landing");
-                }}
-              >
-                <Ionicons name="home-outline" size={22} color="#4b3a2f" />
-                <Text style={styles.menuText}>Home</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setMenuVisible(false);
-                  onChangeScreen("Rooms");
-                }}
-              >
-                <MaterialCommunityIcons name="bed-king-outline" size={22} color="#4b3a2f" />
-                <Text style={styles.menuText}>Rooms</Text>
-              </TouchableOpacity>
-
-              <TouchableOpacity
-                style={styles.menuItem}
-                onPress={() => {
-                  setMenuVisible(false);
                   onOpenOrders();
                 }}
               >

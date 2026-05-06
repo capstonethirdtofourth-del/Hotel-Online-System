@@ -8,23 +8,29 @@ import {
   ScrollView,
   useWindowDimensions,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { useFonts } from "expo-font";
 
-const LANDING_MAIN_IMAGE = require("../assets/images/landing-bg.png");
-const LANDING_PROMO_IMAGE = require("../assets/images/landing-promo.png");
-
+const LANDING_MAIN_IMAGE = require("../assets/images/landing-image-bg.png");
 const SECONDARY = "#6b3200";
 const BG = "#FFF8E7";
 
 export default function LandingPageScreen({ onGoRooms, onGoFoodMenu }) {
+  const [fontsLoaded] = useFonts({
+    Pacifico: require("../assets/font/pacifico.ttf"),
+  });
+  if (!fontsLoaded) {
+      return (
+        <SafeAreaView style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color="#6b3200" />
+        </SafeAreaView>
+      );
+    }
+
   const { width } = useWindowDimensions();
 
   const mainImageSize = Image.resolveAssetSource(LANDING_MAIN_IMAGE);
-  const promoImageSize = Image.resolveAssetSource(LANDING_PROMO_IMAGE);
 
   const mainImageHeight = width * (mainImageSize.height / mainImageSize.width);
-  const promoImageHeight = width * (promoImageSize.height / promoImageSize.width);
-
   return (
     <ScrollView
       style={styles.landingScroll}
@@ -50,13 +56,6 @@ export default function LandingPageScreen({ onGoRooms, onGoFoodMenu }) {
         <Text style={styles.landingDescription}>
           Comfortable stay, cozy rooms, and relaxing ambiance.
         </Text>
-
-        <View style={styles.landingLocationBox}>
-          <Ionicons name="location" size={20} color={SECONDARY} />
-          <Text style={styles.landingLocationText}>
-            Diversion Road, San Leonardo, beside San Leonardo Municipal Hall
-          </Text>
-        </View>
       </View>
     </ScrollView>
   );
@@ -111,7 +110,6 @@ const styles = StyleSheet.create({
     textAlign: "center",
     color: "#2b1d13",
     fontSize: 33,
-    fontWeight: "900",
     marginTop: 2,
     fontFamily: "Pacifico",
   },
