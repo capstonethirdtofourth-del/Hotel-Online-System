@@ -1,0 +1,1038 @@
+import React, { useMemo, useState } from "react";
+import {
+  ActivityIndicator,
+  Alert,
+  Modal,
+  Platform,
+  Pressable,
+  ScrollView,
+  StyleSheet,
+  Text,
+  TextInput,
+  View,
+} from "react-native";
+import DateTimePicker from "@react-native-community/datetimepicker";
+import { Calendar } from "react-native-calendars";
+import { addDoc, collection, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "../../FirebaseConfig";
+
+const ADD_ONS = [
+  {
+    id: "breakfast",
+    name: "Breakfast",
+    description: "Recommended for long stays or family bookings",
+    price: 150,
+    type: "per_person_per_night",
+  },
+  {
+    id: "extra_bed",
+    name: "Extra Bed",
+    description: "Good for children or extra guests",
+    price: 300,
+    type: "per_night",
+  },
+  {
+    id: "pet_cleaning",
+    name: "Pet Cleaning Fee",
+    description: "Recommended when bringing pets",
+    price: 250,
+    type: "fixed",
+  },
+  {
+    id: "late_checkout",
+    name: "Late Checkout",
+    description: "Extend your checkout time",
+    price: 200,
+    type: "fixed",
+  },
+  {
+    id: "room_decoration",
+    name: "Room Decoration",
+    description: "For birthdays, anniversaries, or surprises",
+    price: 500,
+    type: "fixed",
+  },
+];
+
+function getTodayString() {
+  return new Date().toISOString().split("T")[0];
+}
+
+function getTomorrowString() {
+  const date = new Date();
+  date.setDate(date.getDate() + 1);
+  return date.toISOString().split("T")[0];
+}
+
+function parseDateString(dateString) {
+  const [year, month, day] = dateString.split("-").map(Number);
+  return new Date(year, month - 1, day);
+}
+
+function formatDate(date) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+}
+
+function formatDisplayDate(dateString) {
+  if (!dateString) return "Not selected";
+  const date = parseDateString(dateString);
+  return date.toLocaleDateString("en-PH", {
+    month: "short",
+    day: "numeric",
+    year: "numeric",
+  });
+}
+
+function formatTime(date) {
+  const hours = String(date.getHours()).padStart(2, "0");
+  const minutes = String(date.getMinutes()).padStart(2, "0");
+  return `${hours}:${minutes}`;
+}
+
+function getNightDifference(checkIn, checkOut) {
+  if (!checkIn || !checkOut) return 0;
+  const start = parseDateString(checkIn);
+  const end = parseDateString(checkOut);
+  const diffMs = end.getTime() - start.getTime();
+  return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
+}
+
+function enumerateDates(startDateString, endDateString) {
+  const dates = [];
+  if (!startDateString || !endDateString) return dates;
+
+  const current = parseDateString(startDateString);
+  const end = parseDateString(endDateString);
+
+  while (current <= end) {
+    dates.push(formatDate(current));
+    current.setDate(current.getDate() + 1);
+  }
+
+  return dates;
+}
+
+function buildMarkedDates(checkInDate, checkOutDate) {
+  const marked = {};
+
+  if (!checkInDate) return marked;
+
+  if (!checkOutDate) {
+    marked[checkInDate] = {
+      selected: true,
+      startingDay: true,
+      endingDay: true,
+      color: "#111827",
+      textColor: "#ffffff",
+    };
+    return marked;
+  }
+
+  const allDates = enumerateDates(checkInDate, checkOutDate);
+
+  allDates.forEach((dateString, index) => {
+    const isStart = index === 0;
+    const isEnd = index === allDates.length - 1;
+
+    marked[dateString] = {
+      startingDay: isStart,
+      endingDay: isEnd,
+      color: isStart || isEnd ? "#111827" : "#e5e7eb",
+      textColor: isStart || isEnd ? "#ffffff" : "#111827",
+    };
+  });
+
+  return marked;
+}
+
+function parsePrice(value) {
+  if (typeof value === "number") return value;
+  if (!value) return 0;
+
+  const cleaned = String(value).replace(/[^\d.]/g, "");
+  const parsed = Number(cleaned);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function toMoney(value) {
+  const numberValue = Number(value || 0);
+  return `₱${numberValue.toLocaleString("en-PH")}`;
+}
+
+export default function BookingDetailsModal({
+  visible,
+  room,
+  onClose,
+  onBookingCreated,
+  onConfirmBooking,
+}) {
+  const [checkInDate, setCheckInDate] = useState(getTodayString());
+  const [checkOutDate, setCheckOutDate] = useState(getTomorrowString());
+  const [checkInTime, setCheckInTime] = useState(new Date());
+  const [showTimePicker, setShowTimePicker] = useState(false);
+
+  const [adults, setAdults] = useState(1);
+  const [children, setChildren] = useState(0);
+  const [pets, setPets] = useState(0);
+  const [selectedAddOns, setSelectedAddOns] = useState({});
+  const [specialRequest, setSpecialRequest] = useState("");
+  const [loading, setLoading] = useState(false);
+
+  const roomPriceValue = parsePrice(room?.price || room?.roomPrice || 0);
+  const roomPriceLabel =
+    typeof room?.price === "string" && room?.price.trim()
+      ? room.price
+      : `${toMoney(roomPriceValue)}`;
+  const roomName = room?.name || room?.roomName || "Selected Room";
+  const roomId = room?.id || room?.roomId || null;
+  const maxGuests = Number(room?.maxGuests || room?.capacity || 0);
+
+  const totalGuests = adults + children;
+  const stayNights = useMemo(
+    () => getNightDifference(checkInDate, checkOutDate),
+    [checkInDate, checkOutDate]
+  );
+
+  const selectedAddOnsList = useMemo(() => {
+    return ADD_ONS.filter((addOn) => selectedAddOns[addOn.id]);
+  }, [selectedAddOns]);
+
+  const addOnsTotal = useMemo(() => {
+    return selectedAddOnsList.reduce((total, addOn) => {
+      if (addOn.type === "per_person_per_night") {
+        return total + addOn.price * totalGuests * stayNights;
+      }
+
+      if (addOn.type === "per_night") {
+        return total + addOn.price * stayNights;
+      }
+
+      return total + addOn.price;
+    }, 0);
+  }, [selectedAddOnsList, totalGuests, stayNights]);
+
+  const roomSubtotal = roomPriceValue * stayNights;
+  const totalAmount = roomSubtotal + addOnsTotal;
+
+  const hasGuestCapacityWarning = maxGuests > 0 && totalGuests > maxGuests;
+  const shouldSuggestPetCleaning = pets > 0 && !selectedAddOns.pet_cleaning;
+  const shouldSuggestBreakfast = stayNights >= 2 && !selectedAddOns.breakfast;
+  const shouldSuggestExtraBed = children > 0 && !selectedAddOns.extra_bed;
+
+  const markedDates = useMemo(
+    () => buildMarkedDates(checkInDate, checkOutDate),
+    [checkInDate, checkOutDate]
+  );
+
+  const decrease = (setter, currentValue, minimumValue) => {
+    if (currentValue > minimumValue) {
+      setter(currentValue - 1);
+    }
+  };
+
+  const increase = (setter, currentValue) => {
+    setter(currentValue + 1);
+  };
+
+  const toggleAddOn = (id) => {
+    setSelectedAddOns((prev) => ({
+      ...prev,
+      [id]: !prev[id],
+    }));
+  };
+
+  const handleDayPress = (day) => {
+    const selectedDate = day.dateString;
+
+    if (!checkInDate || (checkInDate && checkOutDate)) {
+      setCheckInDate(selectedDate);
+      setCheckOutDate(null);
+      return;
+    }
+
+    if (selectedDate <= checkInDate) {
+      setCheckInDate(selectedDate);
+      setCheckOutDate(null);
+      return;
+    }
+
+    setCheckOutDate(selectedDate);
+  };
+
+  const resetDateSelection = () => {
+    setCheckInDate(getTodayString());
+    setCheckOutDate(getTomorrowString());
+  };
+
+  const handleTimeChange = (event, selectedTime) => {
+    if (Platform.OS === "android") {
+      setShowTimePicker(false);
+    }
+
+    if (selectedTime) {
+      setCheckInTime(selectedTime);
+    }
+  };
+
+  const handleConfirmBooking = async () => {
+    if (!roomId) {
+      Alert.alert("Missing Room ID", "The selected room does not have an ID.");
+      return;
+    }
+
+    if (!auth.currentUser) {
+      Alert.alert("Login Required", "Please login before booking a room.");
+      return;
+    }
+
+    if (!checkInDate || !checkOutDate || stayNights < 1) {
+      Alert.alert(
+        "Select Stay Dates",
+        "Please choose both check-in and check-out dates."
+      );
+      return;
+    }
+
+    if (hasGuestCapacityWarning) {
+      Alert.alert(
+        "Guest Limit Exceeded",
+        `This room only allows up to ${maxGuests} guests.`
+      );
+      return;
+    }
+
+    try {
+      setLoading(true);
+
+      const addOnsForFirestore = selectedAddOnsList.map((addOn) => {
+        let computedTotal = addOn.price;
+
+        if (addOn.type === "per_person_per_night") {
+          computedTotal = addOn.price * totalGuests * stayNights;
+        } else if (addOn.type === "per_night") {
+          computedTotal = addOn.price * stayNights;
+        }
+
+        return {
+          id: addOn.id,
+          name: addOn.name,
+          price: addOn.price,
+          type: addOn.type,
+          computedTotal,
+        };
+      });
+
+      const bookingData = {
+        userId: auth.currentUser.uid,
+        userEmail: auth.currentUser.email || null,
+
+        roomId,
+        roomName,
+        roomPrice: roomPriceValue,
+
+        name: roomName,
+        price: roomPriceLabel,
+        image: room?.image || "",
+        imageKey: room?.imageKey || "",
+        amenities: room?.amenities || [],
+        roomNumber: room?.roomNumber || "",
+
+        status: "booked",
+
+        checkInDate,
+        checkInTime: formatTime(checkInTime),
+        stayNights,
+        checkOutDate,
+
+        checkInAt: null,
+        checkOutAt: null,
+
+        guests: {
+          adults,
+          children,
+          pets,
+          totalGuests,
+        },
+
+        addOns: addOnsForFirestore,
+        specialRequest: specialRequest.trim(),
+
+        pricing: {
+          roomRatePerNight: roomPriceValue,
+          roomSubtotal,
+          addOnsTotal,
+          totalAmount,
+        },
+
+        reservedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      if (onConfirmBooking) {
+        const result = await onConfirmBooking(bookingData);
+
+        if (result === false) {
+          return;
+        }
+
+        Alert.alert(
+          "Booking Created",
+          "Your room booking has been submitted successfully."
+        );
+
+        if (onBookingCreated) {
+          onBookingCreated(result || bookingData);
+        }
+
+        onClose();
+        return;
+      }
+
+      const docRef = await addDoc(collection(db, "roomBookings"), bookingData);
+
+      Alert.alert(
+        "Booking Created",
+        "Your room booking has been submitted successfully."
+      );
+
+      if (onBookingCreated) {
+        onBookingCreated({
+          id: docRef.id,
+          ...bookingData,
+        });
+      }
+
+      onClose();
+    } catch (error) {
+      console.log("Booking error:", error);
+      Alert.alert("Booking Failed", "Something went wrong while booking.");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <Modal visible={visible} animationType="slide" transparent>
+      <View style={styles.overlay}>
+        <View style={styles.modalContainer}>
+          <View style={styles.header}>
+            <View>
+              <Text style={styles.title}>Book Your Stay</Text>
+              <Text style={styles.subtitle}>{roomName}</Text>
+            </View>
+
+            <Pressable
+              style={styles.closeButton}
+              onPress={onClose}
+              disabled={loading}
+            >
+              <Text style={styles.closeButtonText}>×</Text>
+            </Pressable>
+          </View>
+
+          <ScrollView showsVerticalScrollIndicator={false}>
+            <View style={styles.roomCard}>
+              <Text style={styles.roomPrice}>{roomPriceLabel} / night</Text>
+              <Text style={styles.roomNote}>
+                Choose your stay dates, guest count, and add-ons before confirming.
+              </Text>
+            </View>
+
+            <Text style={styles.sectionTitle}>When will you stay?</Text>
+
+            <View style={styles.dateSummaryCard}>
+              <View style={styles.dateSummaryBlock}>
+                <Text style={styles.dateSummaryLabel}>Check-in</Text>
+                <Text style={styles.dateSummaryValue}>
+                  {formatDisplayDate(checkInDate)}
+                </Text>
+              </View>
+
+              <View style={styles.dateDivider} />
+
+              <View style={styles.dateSummaryBlock}>
+                <Text style={styles.dateSummaryLabel}>Check-out</Text>
+                <Text style={styles.dateSummaryValue}>
+                  {formatDisplayDate(checkOutDate)}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.helperText}>
+              Tap a check-in date first, then tap a check-out date.
+            </Text>
+
+            <Calendar
+              current={checkInDate || getTodayString()}
+              minDate={getTodayString()}
+              onDayPress={handleDayPress}
+              markingType="period"
+              markedDates={markedDates}
+              enableSwipeMonths
+              hideExtraDays={false}
+              theme={{
+                backgroundColor: "#ffffff",
+                calendarBackground: "#ffffff",
+                textSectionTitleColor: "#6b7280",
+                selectedDayBackgroundColor: "#111827",
+                selectedDayTextColor: "#ffffff",
+                todayTextColor: "#111827",
+                dayTextColor: "#111827",
+                textDisabledColor: "#d1d5db",
+                monthTextColor: "#111827",
+                textMonthFontWeight: "800",
+                textDayFontWeight: "600",
+                textDayHeaderFontWeight: "700",
+                arrowColor: "#111827",
+              }}
+              style={styles.calendar}
+            />
+
+            <View style={styles.stayFooterRow}>
+              <Pressable style={styles.resetPill} onPress={resetDateSelection}>
+                <Text style={styles.resetPillText}>Reset dates</Text>
+              </Pressable>
+
+              <View style={styles.nightPill}>
+                <Text style={styles.nightPillText}>
+                  {stayNights > 0 ? `${stayNights} night${stayNights > 1 ? "s" : ""}` : "Select checkout"}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.sectionTitle}>Check-in Time</Text>
+
+            <Pressable
+              style={styles.selectBox}
+              onPress={() => setShowTimePicker(true)}
+            >
+              <Text style={styles.label}>Arrival time</Text>
+              <Text style={styles.selectValue}>{formatTime(checkInTime)}</Text>
+            </Pressable>
+
+            {showTimePicker && (
+              <DateTimePicker
+                value={checkInTime}
+                mode="time"
+                display={Platform.OS === "ios" ? "spinner" : "default"}
+                onChange={handleTimeChange}
+              />
+            )}
+
+            <Text style={styles.sectionTitle}>Guests</Text>
+
+            <GuestCounter
+              title="Adults"
+              subtitle="Ages 18 and above"
+              value={adults}
+              minimumValue={1}
+              onDecrease={() => decrease(setAdults, adults, 1)}
+              onIncrease={() => increase(setAdults, adults)}
+            />
+
+            <GuestCounter
+              title="Children"
+              subtitle="Ages 17 and below"
+              value={children}
+              minimumValue={0}
+              onDecrease={() => decrease(setChildren, children, 0)}
+              onIncrease={() => increase(setChildren, children)}
+            />
+
+            <GuestCounter
+              title="Pets"
+              subtitle="Dogs, cats, or small pets"
+              value={pets}
+              minimumValue={0}
+              onDecrease={() => decrease(setPets, pets, 0)}
+              onIncrease={() => increase(setPets, pets)}
+            />
+
+            {hasGuestCapacityWarning && (
+              <Text style={styles.warningText}>
+                This room only allows up to {maxGuests} guests.
+              </Text>
+            )}
+
+            <Text style={styles.sectionTitle}>Recommended Add-ons</Text>
+
+            {shouldSuggestPetCleaning && (
+              <Suggestion text="You added a pet. Pet Cleaning Fee is recommended." />
+            )}
+
+            {shouldSuggestBreakfast && (
+              <Suggestion text="You are staying for 2+ nights. Breakfast is recommended." />
+            )}
+
+            {shouldSuggestExtraBed && (
+              <Suggestion text="You added children. Extra Bed may be helpful." />
+            )}
+
+            {ADD_ONS.map((addOn) => {
+              const selected = !!selectedAddOns[addOn.id];
+
+              return (
+                <Pressable
+                  key={addOn.id}
+                  style={[
+                    styles.addOnCard,
+                    selected ? styles.addOnCardSelected : null,
+                  ]}
+                  onPress={() => toggleAddOn(addOn.id)}
+                >
+                  <View style={styles.checkbox}>
+                    {selected && <Text style={styles.checkboxText}>✓</Text>}
+                  </View>
+
+                  <View style={styles.addOnInfo}>
+                    <Text style={styles.addOnName}>{addOn.name}</Text>
+                    <Text style={styles.addOnDescription}>
+                      {addOn.description}
+                    </Text>
+                  </View>
+
+                  <Text style={styles.addOnPrice}>{toMoney(addOn.price)}</Text>
+                </Pressable>
+              );
+            })}
+
+            <Text style={styles.sectionTitle}>Special Request</Text>
+
+            <TextInput
+              style={styles.textArea}
+              multiline
+              numberOfLines={4}
+              placeholder="Example: extra towel, quiet room, near window..."
+              value={specialRequest}
+              onChangeText={setSpecialRequest}
+            />
+
+            <View style={styles.summaryCard}>
+              <Text style={styles.summaryTitle}>Price Summary</Text>
+
+              <SummaryRow
+                label={`Room (${roomPriceLabel} x ${stayNights} night/s)`}
+                value={toMoney(roomSubtotal)}
+              />
+
+              <SummaryRow label="Add-ons" value={toMoney(addOnsTotal)} />
+
+              <View style={styles.divider} />
+
+              <SummaryRow
+                label="Total"
+                value={toMoney(totalAmount)}
+                large
+              />
+            </View>
+
+            <Pressable
+              style={[
+                styles.confirmButton,
+                loading || hasGuestCapacityWarning
+                  ? styles.confirmButtonDisabled
+                  : null,
+              ]}
+              onPress={handleConfirmBooking}
+              disabled={loading || hasGuestCapacityWarning}
+            >
+              {loading ? (
+                <ActivityIndicator color="#fff" />
+              ) : (
+                <Text style={styles.confirmButtonText}>Confirm Booking</Text>
+              )}
+            </Pressable>
+          </ScrollView>
+        </View>
+      </View>
+    </Modal>
+  );
+}
+
+function GuestCounter({
+  title,
+  subtitle,
+  value,
+  minimumValue,
+  onDecrease,
+  onIncrease,
+}) {
+  return (
+    <View style={styles.counterRow}>
+      <View>
+        <Text style={styles.counterTitle}>{title}</Text>
+        <Text style={styles.counterSubtitle}>{subtitle}</Text>
+      </View>
+
+      <View style={styles.counterControls}>
+        <Pressable
+          style={[
+            styles.counterButton,
+            value <= minimumValue ? styles.counterButtonDisabled : null,
+          ]}
+          onPress={onDecrease}
+          disabled={value <= minimumValue}
+        >
+          <Text style={styles.counterButtonText}>−</Text>
+        </Pressable>
+
+        <Text style={styles.counterValue}>{value}</Text>
+
+        <Pressable style={styles.counterButton} onPress={onIncrease}>
+          <Text style={styles.counterButtonText}>+</Text>
+        </Pressable>
+      </View>
+    </View>
+  );
+}
+
+function Suggestion({ text }) {
+  return (
+    <View style={styles.suggestionBox}>
+      <Text style={styles.suggestionText}>💡 {text}</Text>
+    </View>
+  );
+}
+
+function SummaryRow({ label, value, large }) {
+  return (
+    <View style={styles.summaryRow}>
+      <Text style={[styles.summaryLabel, large ? styles.summaryLarge : null]}>
+        {label}
+      </Text>
+      <Text style={[styles.summaryValue, large ? styles.summaryLarge : null]}>
+        {value}
+      </Text>
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  overlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "flex-end",
+  },
+  modalContainer: {
+    backgroundColor: "#fff",
+    maxHeight: "94%",
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
+    paddingHorizontal: 18,
+    paddingTop: 18,
+    paddingBottom: 28,
+  },
+  header: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "flex-start",
+    marginBottom: 12,
+  },
+  title: {
+    fontSize: 22,
+    fontWeight: "800",
+    color: "#1f2937",
+  },
+  subtitle: {
+    fontSize: 14,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  closeButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#f3f4f6",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  closeButtonText: {
+    fontSize: 26,
+    color: "#374151",
+    marginTop: -2,
+  },
+  roomCard: {
+    backgroundColor: "#ecfdf5",
+    borderRadius: 16,
+    padding: 14,
+    marginBottom: 16,
+  },
+  roomPrice: {
+    fontSize: 18,
+    fontWeight: "800",
+    color: "#065f46",
+  },
+  roomNote: {
+    color: "#047857",
+    marginTop: 4,
+    lineHeight: 20,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginTop: 18,
+    marginBottom: 10,
+  },
+  dateSummaryCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 18,
+    backgroundColor: "#ffffff",
+    overflow: "hidden",
+  },
+  dateSummaryBlock: {
+    flex: 1,
+    paddingVertical: 14,
+    paddingHorizontal: 14,
+  },
+  dateDivider: {
+    width: 1,
+    alignSelf: "stretch",
+    backgroundColor: "#e5e7eb",
+  },
+  dateSummaryLabel: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 4,
+  },
+  dateSummaryValue: {
+    fontSize: 15,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  helperText: {
+    color: "#6b7280",
+    fontSize: 12,
+    marginTop: 8,
+  },
+  calendar: {
+    marginTop: 12,
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 18,
+    overflow: "hidden",
+  },
+  stayFooterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 12,
+  },
+  resetPill: {
+    borderWidth: 1,
+    borderColor: "#111827",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  resetPillText: {
+    color: "#111827",
+    fontWeight: "700",
+  },
+  nightPill: {
+    backgroundColor: "#111827",
+    borderRadius: 999,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  nightPillText: {
+    color: "#ffffff",
+    fontWeight: "700",
+  },
+  selectBox: {
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 14,
+    padding: 14,
+    marginBottom: 10,
+    backgroundColor: "#fff",
+  },
+  label: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginBottom: 4,
+  },
+  selectValue: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  counterRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: "#f3f4f6",
+  },
+  counterTitle: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#111827",
+  },
+  counterSubtitle: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  counterControls: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  counterButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 17,
+    backgroundColor: "#10b981",
+    alignItems: "center",
+    justifyContent: "center",
+    marginHorizontal: 6,
+  },
+  counterButtonDisabled: {
+    backgroundColor: "#d1d5db",
+  },
+  counterButtonText: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "800",
+    marginTop: -2,
+  },
+  counterValue: {
+    minWidth: 24,
+    textAlign: "center",
+    fontSize: 17,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  warningText: {
+    backgroundColor: "#fef2f2",
+    color: "#b91c1c",
+    padding: 10,
+    borderRadius: 12,
+    marginTop: 10,
+    fontWeight: "600",
+  },
+  suggestionBox: {
+    backgroundColor: "#fffbeb",
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 8,
+  },
+  suggestionText: {
+    color: "#92400e",
+    lineHeight: 20,
+  },
+  addOnCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#e5e7eb",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 10,
+  },
+  addOnCardSelected: {
+    borderColor: "#10b981",
+    backgroundColor: "#ecfdf5",
+  },
+  checkbox: {
+    width: 24,
+    height: 24,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: "#10b981",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 10,
+  },
+  checkboxText: {
+    color: "#059669",
+    fontWeight: "900",
+  },
+  addOnInfo: {
+    flex: 1,
+  },
+  addOnName: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#111827",
+  },
+  addOnDescription: {
+    fontSize: 12,
+    color: "#6b7280",
+    marginTop: 2,
+  },
+  addOnPrice: {
+    fontWeight: "800",
+    color: "#065f46",
+    marginLeft: 10,
+  },
+  textArea: {
+    minHeight: 90,
+    borderWidth: 1,
+    borderColor: "#d1d5db",
+    borderRadius: 14,
+    padding: 12,
+    textAlignVertical: "top",
+    color: "#111827",
+  },
+  summaryCard: {
+    backgroundColor: "#f9fafb",
+    borderRadius: 16,
+    padding: 14,
+    marginTop: 18,
+    marginBottom: 16,
+  },
+  summaryTitle: {
+    fontSize: 16,
+    fontWeight: "800",
+    color: "#111827",
+    marginBottom: 10,
+  },
+  summaryRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 8,
+  },
+  summaryLabel: {
+    color: "#4b5563",
+    flex: 1,
+    marginRight: 10,
+  },
+  summaryValue: {
+    color: "#111827",
+    fontWeight: "700",
+  },
+  summaryLarge: {
+    fontSize: 17,
+    fontWeight: "900",
+    color: "#065f46",
+  },
+  divider: {
+    height: 1,
+    backgroundColor: "#e5e7eb",
+    marginVertical: 8,
+  },
+  confirmButton: {
+    backgroundColor: "#10b981",
+    paddingVertical: 15,
+    borderRadius: 16,
+    alignItems: "center",
+    marginBottom: 10,
+  },
+  confirmButtonDisabled: {
+    backgroundColor: "#9ca3af",
+  },
+  confirmButtonText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "900",
+  },
+});

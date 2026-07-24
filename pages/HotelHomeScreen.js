@@ -23,6 +23,7 @@ import {
 import { getAuth } from "firebase/auth";
 import { db } from "../FirebaseConfig";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import BookingDetailsModal from "./components/BookingDetailsModal";
 
 export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [rooms, setRooms] = useState([]);
@@ -30,6 +31,8 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingRoom, setBookingRoom] = useState(false);
   const [blockedRooms, setBlockedRooms] = useState({});
+  const [bookingDetailsVisible, setBookingDetailsVisible] = useState(false);
+  const [roomForBooking, setRoomForBooking] = useState(null);
 
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
@@ -276,24 +279,52 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
       return;
     }
 
+    setRoomForBooking(selectedRoom);
+    setBookingDetailsVisible(true);
+  };
+
+  const handleConfirmDetailedBooking = async (room, bookingDetails) => {
+    if (!room || bookingRoom) return false;
+
+    const roomStatus = blockedRooms[room?.id];
+
+    if (roomStatus === "checked-in") {
+      Alert.alert("Room Occupied", "This room is currently occupied.");
+      return false;
+    }
+
+    if (roomStatus === "booked") {
+      Alert.alert("Room Unavailable", "This room is already booked.");
+      return false;
+    }
+
     try {
       setBookingRoom(true);
 
       if (onBookRoom) {
-        const success = await onBookRoom(selectedRoom);
-        if (!success) return;
+        const success = await onBookRoom(room, bookingDetails);
+        if (!success) return false;
       }
 
       Alert.alert(
         "Room Booked",
-        `${selectedRoom.name} has been added to your reserved room list.`
+        `${room.name} has been added to your reserved room list.`
       );
 
+      setBookingDetailsVisible(false);
+      setRoomForBooking(null);
       closeRoomModal();
       await fetchBlockedRooms();
+      return true;
     } finally {
       setBookingRoom(false);
     }
+  };
+
+  const closeBookingDetailsModal = () => {
+    if (bookingRoom) return;
+    setBookingDetailsVisible(false);
+    setRoomForBooking(null);
   };
 
   const renderAmenityIcon = (item) => {
@@ -557,6 +588,15 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
           </View>
         </View>
       </Modal>
+
+
+      <BookingDetailsModal
+        visible={bookingDetailsVisible}
+        room={roomForBooking}
+        submitting={bookingRoom}
+        onClose={closeBookingDetailsModal}
+        onConfirmBooking={handleConfirmDetailedBooking}
+      />
 
       <Modal
         visible={ratingModalVisible}

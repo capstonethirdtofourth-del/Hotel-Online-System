@@ -7,7 +7,9 @@ import {
   Image,
   ScrollView,
   useWindowDimensions,
+  ActivityIndicator
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { useFonts } from "expo-font";
 
 const LANDING_MAIN_IMAGE = require("../assets/images/landing-image-bg.png");

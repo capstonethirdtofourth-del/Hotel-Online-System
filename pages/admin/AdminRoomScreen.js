@@ -105,6 +105,30 @@ export default function AdminRoomScreen() {
     return new Date(timestamp.seconds * 1000).toLocaleString();
   };
 
+  const formatGuests = (guests) => {
+    if (!guests) return "Not set";
+
+    const adults = guests.adults || 0;
+    const children = guests.children || 0;
+    const pets = guests.pets || 0;
+
+    return `${adults} adult(s), ${children} child/children, ${pets} pet(s)`;
+  };
+
+  const formatAddOns = (addOns) => {
+    if (!Array.isArray(addOns) || addOns.length === 0) {
+      return "No add-ons selected";
+    }
+
+    return addOns
+      .map((item) => `${item.name} - ₱${item.computedTotal || item.price || 0}`)
+      .join("\n");
+  };
+
+  const getTotalAmount = (booking) => {
+    return booking?.pricing?.totalAmount || booking?.roomPrice || booking?.price || "Not set";
+  };
+
   const getRoomStatus = (roomId) => {
     const booking = bookingMap[roomId];
     if (!booking) return "available";
@@ -383,8 +407,10 @@ export default function AdminRoomScreen() {
       <Image source={{ uri: booking.image }} style={styles.cardImage} />
 
       <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{booking.name}</Text>
-        <Text style={styles.cardSubtitle}>{booking.roomNumber || ""}</Text>
+        <Text style={styles.cardTitle}>{booking.name || booking.roomName}</Text>
+        <Text style={styles.cardSubtitle}>
+          {booking.roomNumber || booking.checkInDate || ""}
+        </Text>
         <Text style={styles.cardStatus}>{statusLabel}</Text>
         {!!subtitle && <Text style={styles.metaText}>{subtitle}</Text>}
       </View>
@@ -434,10 +460,9 @@ export default function AdminRoomScreen() {
         ) : (
           occupiedRooms.map((booking) =>
             renderBookingCard(
-                booking,
-                `${booking.price}`,
-                "Occupied",
-                `occupied by: ${booking.guestName || booking.userEmail || "Unknown"}`
+              booking,
+              "Occupied",
+              `occupied by: ${booking.guestName || booking.userEmail || "Unknown"}`
             )
           )
         )}
@@ -561,7 +586,62 @@ export default function AdminRoomScreen() {
                       <Text style={styles.infoLabel}>
                         Date of Booking:{" "}
                         <Text style={styles.infoValue}>
-                          {formatDateTime(selectedRoom.booking?.reservedAt)}
+                          {formatDateTime(
+                            selectedRoom.booking?.reservedAt ||
+                              selectedRoom.booking?.createdAt
+                          )}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Check-in Schedule:{" "}
+                        <Text style={styles.infoValue}>
+                          {selectedRoom.booking?.checkInDate || "Not set"}{" "}
+                          {selectedRoom.booking?.checkInTime || ""}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Check-out Date:{" "}
+                        <Text style={styles.infoValue}>
+                          {selectedRoom.booking?.checkOutDate || "Not set"}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Stay Duration:{" "}
+                        <Text style={styles.infoValue}>
+                          {selectedRoom.booking?.stayNights || 1} night(s)
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Guests:{" "}
+                        <Text style={styles.infoValue}>
+                          {formatGuests(selectedRoom.booking?.guests)}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Add-ons:{"\n"}
+                        <Text style={styles.infoValue}>
+                          {formatAddOns(selectedRoom.booking?.addOns)}
+                        </Text>
+                      </Text>
+
+                      {!!selectedRoom.booking?.specialRequest && (
+                        <Text style={styles.infoLabel}>
+                          Special Request:{" "}
+                          <Text style={styles.infoValue}>
+                            {selectedRoom.booking.specialRequest}
+                          </Text>
+                        </Text>
+                      )}
+
+                      <Text style={styles.infoLabel}>
+                        Total Amount:{" "}
+                        <Text style={styles.infoValue}>
+                          ₱{getTotalAmount(selectedRoom.booking)}
                         </Text>
                       </Text>
                     </View>
@@ -648,6 +728,35 @@ export default function AdminRoomScreen() {
                         Phone:{" "}
                         <Text style={styles.infoValue}>
                           {selectedRoom.booking?.guestPhone || "Not set"}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Original Check-in Schedule:{" "}
+                        <Text style={styles.infoValue}>
+                          {selectedRoom.booking?.checkInDate || "Not set"}{" "}
+                          {selectedRoom.booking?.checkInTime || ""}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Expected Check-out:{" "}
+                        <Text style={styles.infoValue}>
+                          {selectedRoom.booking?.checkOutDate || "Not set"}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Guests:{" "}
+                        <Text style={styles.infoValue}>
+                          {formatGuests(selectedRoom.booking?.guests)}
+                        </Text>
+                      </Text>
+
+                      <Text style={styles.infoLabel}>
+                        Total Amount:{" "}
+                        <Text style={styles.infoValue}>
+                          ₱{getTotalAmount(selectedRoom.booking)}
                         </Text>
                       </Text>
                     </View>

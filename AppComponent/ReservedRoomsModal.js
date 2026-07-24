@@ -25,6 +25,19 @@ export default function ReservedRoomsModal({
     return date.toLocaleString();
   };
 
+  const formatPlannedDate = (dateString) => {
+    if (!dateString) return "Not set";
+
+    const [year, month, day] = String(dateString).split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+
+    return date.toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
   return (
     <Modal
       visible={visible}
@@ -60,7 +73,7 @@ export default function ReservedRoomsModal({
                     <View key={room.id} style={styles.listCard}>
                       <View style={{ flex: 1 }}>
                         <Text style={styles.listTitle}>
-                          {room.name || "Unnamed Room"}
+                          {room.name || room.roomName || "Unnamed Room"}
                         </Text>
 
                         <Text style={styles.listSubtitle}>
@@ -68,22 +81,42 @@ export default function ReservedRoomsModal({
                         </Text>
 
                         <Text style={styles.listSubtitle}>
-                          Status: {room.status || "checked-in"}
+                          Status: {room.status || "booked"}
                         </Text>
 
                         <View style={styles.detailsBox}>
-                          <Text style={styles.detailLabel}>Check-in</Text>
+                          <Text style={styles.detailLabel}>Planned Check-in</Text>
                           <Text style={styles.detailValue}>
-                            {formatDateTime(room.checkInAt)}
+                            {room.checkInDate
+                              ? `${formatPlannedDate(room.checkInDate)} at ${room.checkInTime || "Not set"}`
+                              : formatDateTime(room.checkInAt)}
                           </Text>
 
                           <Text style={[styles.detailLabel, { marginTop: 8 }]}>
-                            Check-out
+                            Planned Check-out
                           </Text>
                           <Text style={styles.detailValue}>
-                            {room.checkOutAt
+                            {room.checkOutDate
+                              ? formatPlannedDate(room.checkOutDate)
+                              : room.checkOutAt
                               ? formatDateTime(room.checkOutAt)
                               : "Not yet checked out"}
+                          </Text>
+
+                          <Text style={[styles.detailLabel, { marginTop: 8 }]}>
+                            Duration
+                          </Text>
+                          <Text style={styles.detailValue}>
+                            {room.stayNights
+                              ? `${room.stayNights} night${room.stayNights > 1 ? "s" : ""}`
+                              : "Not set"}
+                          </Text>
+
+                          <Text style={[styles.detailLabel, { marginTop: 8 }]}>
+                            Guests
+                          </Text>
+                          <Text style={styles.detailValue}>
+                            Adults: {room.guests?.adults || 1} • Children: {room.guests?.children || 0} • Pets: {room.guests?.pets || 0}
                           </Text>
                         </View>
                       </View>
@@ -106,8 +139,8 @@ export default function ReservedRoomsModal({
                         )}
                       </TouchableOpacity>
                     </View>
-                  )}
-                )
+                  );
+                })
               )}
             </ScrollView>
           )}
@@ -208,7 +241,6 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
-
   cancelActionTextLoading: {
     color: "#fff",
     fontWeight: "700",

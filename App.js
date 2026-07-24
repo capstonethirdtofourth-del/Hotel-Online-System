@@ -522,13 +522,47 @@ export default function App() {
     await fetchReservedRooms();
   };
 
-  const handleBookRoom = async (room) => {
+  const handleBookRoom = async (roomOrBookingDetails) => {
     const user = auth.currentUser;
 
     if (!user) {
       Alert.alert("Login Required", "Please log in first.");
       return false;
     }
+
+    const cleanUndefined = (value) => {
+      if (Array.isArray(value)) {
+        return value.map(cleanUndefined);
+      }
+
+      if (value && typeof value === "object") {
+        const prototype = Object.getPrototypeOf(value);
+        const isPlainObject = prototype === Object.prototype || prototype === null;
+
+        if (!isPlainObject) {
+          return value;
+        }
+
+        const cleaned = {};
+
+        Object.keys(value).forEach((key) => {
+          if (value[key] !== undefined) {
+            cleaned[key] = cleanUndefined(value[key]);
+          }
+        });
+
+        return cleaned;
+      }
+
+      return value;
+    };
+
+    const datesOverlap = (startA, endA, startB, endB) => {
+      if (!startA || !endA || !startB || !endB) return true;
+
+      // Date strings are saved as YYYY-MM-DD, so string comparison works.
+      return startA < endB && endA > startB;
+    };
 
     try {
       const userRef = doc(db, "users", user.uid);
@@ -541,17 +575,31 @@ export default function App() {
 
       const userProfile = userSnap.data();
 
+      const roomId = roomOrBookingDetails?.roomId || roomOrBookingDetails?.id;
+
+      if (!roomId) {
+        Alert.alert(
+          "Booking Error",
+          "Room ID is missing. Please reopen the room and try again."
+        );
+        return false;
+      }
+
+      const isDateRangeBooking =
+        !!roomOrBookingDetails?.checkInDate &&
+        !!roomOrBookingDetails?.checkOutDate;
+
       const bookingsRef = collection(db, "roomBookings");
 
       const existingBookedQuery = query(
         bookingsRef,
-        where("roomId", "==", room.id),
+        where("roomId", "==", roomId),
         where("status", "==", "booked")
       );
 
       const existingCheckedInQuery = query(
         bookingsRef,
-        where("roomId", "==", room.id),
+        where("roomId", "==", roomId),
         where("status", "==", "checked-in")
       );
 
@@ -561,37 +609,90 @@ export default function App() {
           getDocs(existingCheckedInQuery),
         ]);
 
-      if (!existingBookedSnapshot.empty || !existingCheckedInSnapshot.empty) {
+      const existingActiveBookings = [
+        ...existingBookedSnapshot.docs,
+        ...existingCheckedInSnapshot.docs,
+      ].map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
+
+      if (isDateRangeBooking) {
+        const hasOverlappingBooking = existingActiveBookings.some((booking) => {
+          if (!booking.checkInDate || !booking.checkOutDate) {
+            return true;
+          }
+
+          return datesOverlap(
+            roomOrBookingDetails.checkInDate,
+            roomOrBookingDetails.checkOutDate,
+            booking.checkInDate,
+            booking.checkOutDate
+          );
+        });
+
+        if (hasOverlappingBooking) {
+          Alert.alert(
+            "Unavailable",
+            "This room is already booked or occupied for the selected dates."
+          );
+          return false;
+        }
+      } else if (existingActiveBookings.length > 0) {
         Alert.alert("Unavailable", "This room is already booked or occupied.");
         return false;
       }
 
-      await addDoc(bookingsRef, {
+      const roomName =
+        roomOrBookingDetails?.roomName ||
+        roomOrBookingDetails?.name ||
+        "Unnamed Room";
+
+      const roomPrice =
+        roomOrBookingDetails?.price ||
+        roomOrBookingDetails?.roomPrice ||
+        "";
+
+      const bookingPayload = {
+        ...roomOrBookingDetails,
+
         userId: user.uid,
         userEmail: user.email || "",
         userFullName: userProfile.fullName || "",
         userPhone: userProfile.phone || "",
-        roomId: room.id,
-        name: room.name,
-        price: room.price,
-        image: room.image || "",
-        imageKey: room.imageKey || "",
-        amenities: room.amenities || [],
-        roomNumber: room.roomNumber || "",
+
+        roomId,
+        roomName,
+        name: roomName,
+        price: roomPrice,
+
+        image: roomOrBookingDetails?.image || "",
+        imageKey: roomOrBookingDetails?.imageKey || "",
+        amenities: roomOrBookingDetails?.amenities || [],
+        roomNumber: roomOrBookingDetails?.roomNumber || "",
+
         guestName: userProfile.fullName || "",
         guestPhone: userProfile.phone || "",
-        checkInAt: null,
-        checkOutAt: null,
+
+        checkInAt: roomOrBookingDetails?.checkInAt || null,
+        checkOutAt: roomOrBookingDetails?.checkOutAt || null,
+
         status: "booked",
         reservedAt: serverTimestamp(),
-      });
+        createdAt: roomOrBookingDetails?.createdAt || serverTimestamp(),
+        updatedAt: serverTimestamp(),
+      };
+
+      const docRef = await addDoc(bookingsRef, cleanUndefined(bookingPayload));
 
       await fetchReservedRooms();
 
       setRoomStatusRefreshKey((prev) => prev + 1);
 
-      Alert.alert("Room Booked", `${room.name} has been reserved.`);
-      return true;
+      return {
+        id: docRef.id,
+        ...bookingPayload,
+      };
     } catch (error) {
       console.log("Error booking room:", error);
       Alert.alert("Error", "Failed to reserve room.");
