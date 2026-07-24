@@ -30,7 +30,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState(null);
   const [bookingRoom, setBookingRoom] = useState(false);
-  const [blockedRooms, setBlockedRooms] = useState({});
+  const [activeBookingsByRoom, setActiveBookingsByRoom] = useState({});
   const [bookingDetailsVisible, setBookingDetailsVisible] = useState(false);
   const [roomForBooking, setRoomForBooking] = useState(null);
 
@@ -44,7 +44,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   }, []);
 
   useEffect(() => {
-    fetchBlockedRooms();
+    fetchActiveBookings();
   }, [roomStatusRefreshKey]);
 
   const fetchRooms = async () => {
@@ -66,7 +66,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     }
   };
 
-  const fetchBlockedRooms = async () => {
+  const fetchActiveBookings = async () => {
     try {
       const bookingsRef = collection(db, "roomBookings");
 
@@ -78,21 +78,26 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         getDocs(checkedInQuery),
       ]);
 
-      const blockedMap = {};
+      const bookingsByRoom = {};
 
-      bookedSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        blockedMap[data.roomId] = "booked";
+      [...bookedSnapshot.docs, ...checkedInSnapshot.docs].forEach((docSnap) => {
+        const booking = {
+          id: docSnap.id,
+          ...docSnap.data(),
+        };
+
+        if (!booking.roomId) return;
+
+        if (!bookingsByRoom[booking.roomId]) {
+          bookingsByRoom[booking.roomId] = [];
+        }
+
+        bookingsByRoom[booking.roomId].push(booking);
       });
 
-      checkedInSnapshot.forEach((docSnap) => {
-        const data = docSnap.data();
-        blockedMap[data.roomId] = "checked-in";
-      });
-
-      setBlockedRooms(blockedMap);
+      setActiveBookingsByRoom(bookingsByRoom);
     } catch (error) {
-      console.log("Error fetching blocked rooms:", error);
+      console.log("Error fetching active room bookings:", error);
     }
   };
 
@@ -264,58 +269,28 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     }
   };
 
-  const handleBookRoom = async () => {
+  const handleBookRoom = () => {
     if (!selectedRoom || bookingRoom) return;
-
-    const roomStatus = blockedRooms[selectedRoom?.id];
-
-    if (roomStatus === "checked-in") {
-      Alert.alert("Room Occupied", "This room is currently occupied.");
-      return;
-    }
-
-    if (roomStatus === "booked") {
-      Alert.alert("Room Unavailable", "This room is already booked.");
-      return;
-    }
 
     setRoomForBooking(selectedRoom);
     setBookingDetailsVisible(true);
   };
 
-  const handleConfirmDetailedBooking = async (room, bookingDetails) => {
-    if (!room || bookingRoom) return false;
-
-    const roomStatus = blockedRooms[room?.id];
-
-    if (roomStatus === "checked-in") {
-      Alert.alert("Room Occupied", "This room is currently occupied.");
-      return false;
-    }
-
-    if (roomStatus === "booked") {
-      Alert.alert("Room Unavailable", "This room is already booked.");
-      return false;
-    }
+  const handleConfirmDetailedBooking = async (bookingData) => {
+    if (!bookingData || bookingRoom) return false;
 
     try {
       setBookingRoom(true);
 
-      if (onBookRoom) {
-        const success = await onBookRoom(room, bookingDetails);
-        if (!success) return false;
-      }
+      const result = onBookRoom
+        ? await onBookRoom(bookingData)
+        : false;
 
-      Alert.alert(
-        "Room Booked",
-        `${room.name} has been added to your reserved room list.`
-      );
+      if (!result) return false;
 
-      setBookingDetailsVisible(false);
-      setRoomForBooking(null);
       closeRoomModal();
-      await fetchBlockedRooms();
-      return true;
+      await fetchActiveBookings();
+      return result;
     } finally {
       setBookingRoom(false);
     }
@@ -352,13 +327,19 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     }
   };
 
+  const getRoomBookings = (roomId) => {
+    return activeBookingsByRoom[roomId] || [];
+  };
+
   const getRoomBadge = (roomId) => {
-    if (blockedRooms[roomId] === "checked-in") {
+    const roomBookings = getRoomBookings(roomId);
+
+    if (roomBookings.some((booking) => booking.status === "checked-in")) {
       return "Occupied";
     }
 
-    if (blockedRooms[roomId] === "booked") {
-      return "Booked";
+    if (roomBookings.some((booking) => booking.status === "booked")) {
+      return "Dates Reserved";
     }
 
     return null;
@@ -393,9 +374,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   };
 
   const featuredRoom = rooms[0];
-  const selectedRoomStatus = blockedRooms[selectedRoom?.id];
-  const selectedRoomBlocked =
-    selectedRoomStatus === "booked" || selectedRoomStatus === "checked-in";
+  const selectedRoomBadge = getRoomBadge(selectedRoom?.id);
 
   if (loadingRooms) {
     return (
@@ -426,9 +405,9 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
             <View
               style={[
                 styles.occupiedBadge,
-                blockedRooms[featuredRoom.id] === "checked-in"
+                getRoomBadge(featuredRoom.id) === "Occupied"
                   ? styles.occupiedBadgeGreen
-                  : styles.bookedBadgeRed,
+                  : styles.reservedBadge,
               ]}
             >
               <Text style={styles.occupiedText}>{getRoomBadge(featuredRoom.id)}</Text>
@@ -465,13 +444,13 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                 <View
                   style={[
                     styles.occupiedBadgeSmall,
-                    blockedRooms[room.id] === "checked-in"
+                    getRoomBadge(room.id) === "Occupied"
                       ? styles.occupiedBadgeGreen
-                      : styles.bookedBadgeRed,
+                      : styles.reservedBadge,
                   ]}
                 >
                   <Text style={styles.occupiedTextSmall}>
-                    {blockedRooms[room.id] === "checked-in" ? "Occupied" : "Booked"}
+                    {getRoomBadge(room.id)}
                   </Text>
                 </View>
               )}
@@ -565,22 +544,24 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                   ))}
                 </View>
 
+                {!!selectedRoomBadge && (
+                  <Text style={styles.availabilityNote}>
+                    {selectedRoomBadge === "Occupied"
+                      ? "This room is occupied now, but future dates may still be available."
+                      : "Some dates are already reserved. Open the calendar to see available dates."}
+                  </Text>
+                )}
+
                 <TouchableOpacity
                   style={[
                     styles.bookButton,
-                    (bookingRoom || selectedRoomBlocked) && styles.bookButtonDisabled,
+                    bookingRoom && styles.bookButtonDisabled,
                   ]}
                   onPress={handleBookRoom}
-                  disabled={bookingRoom || selectedRoomBlocked}
+                  disabled={bookingRoom}
                 >
                   <Text style={styles.bookButtonText}>
-                    {selectedRoomStatus === "checked-in"
-                      ? "Room Occupied"
-                      : selectedRoomStatus === "booked"
-                      ? "Already Booked"
-                      : bookingRoom
-                      ? "Booking..."
-                      : "Book Room"}
+                    {bookingRoom ? "Checking..." : "Check Availability"}
                   </Text>
                 </TouchableOpacity>
               </ScrollView>
@@ -594,6 +575,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         visible={bookingDetailsVisible}
         room={roomForBooking}
         submitting={bookingRoom}
+        unavailableBookings={getRoomBookings(roomForBooking?.id)}
         onClose={closeBookingDetailsModal}
         onConfirmBooking={handleConfirmDetailedBooking}
       />
@@ -885,6 +867,16 @@ const styles = StyleSheet.create({
     color: "#3d3128",
     fontWeight: "500",
   },
+  availabilityNote: {
+    backgroundColor: "#fff7ed",
+    color: "#9a3412",
+    padding: 10,
+    borderRadius: 12,
+    marginBottom: 12,
+    lineHeight: 19,
+    fontSize: 13,
+    fontWeight: "600",
+  },
   bookButton: {
     backgroundColor: "#6d4e3a",
     paddingVertical: 14,
@@ -926,8 +918,8 @@ const styles = StyleSheet.create({
   occupiedBadgeGreen: {
     backgroundColor: "rgba(34, 139, 34, 0.9)",
   },
-  bookedBadgeRed: {
-    backgroundColor: "rgba(200, 0, 0, 0.85)",
+  reservedBadge: {
+    backgroundColor: "rgba(180, 100, 0, 0.9)",
   },
   occupiedTextSmall: {
     color: "#fff",

@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from "react";
+import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -54,14 +54,15 @@ const ADD_ONS = [
   },
 ];
 
-function getTodayString() {
-  return new Date().toISOString().split("T")[0];
+function getLocalDateString(date = new Date()) {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
 }
 
-function getTomorrowString() {
-  const date = new Date();
-  date.setDate(date.getDate() + 1);
-  return date.toISOString().split("T")[0];
+function getTodayString() {
+  return getLocalDateString(new Date());
 }
 
 function parseDateString(dateString) {
@@ -100,14 +101,14 @@ function getNightDifference(checkIn, checkOut) {
   return Math.max(0, Math.round(diffMs / (1000 * 60 * 60 * 24)));
 }
 
-function enumerateDates(startDateString, endDateString) {
+function enumerateDates(startDateString, endDateString, includeEnd = true) {
   const dates = [];
   if (!startDateString || !endDateString) return dates;
 
   const current = parseDateString(startDateString);
   const end = parseDateString(endDateString);
 
-  while (current <= end) {
+  while (includeEnd ? current <= end : current < end) {
     dates.push(formatDate(current));
     current.setDate(current.getDate() + 1);
   }
@@ -115,8 +116,47 @@ function enumerateDates(startDateString, endDateString) {
   return dates;
 }
 
-function buildMarkedDates(checkInDate, checkOutDate) {
+function buildUnavailableNightSet(bookings = []) {
+  const unavailable = new Set();
+
+  bookings.forEach((booking) => {
+    if (!booking?.checkInDate || !booking?.checkOutDate) return;
+
+    enumerateDates(
+      booking.checkInDate,
+      booking.checkOutDate,
+      false
+    ).forEach((dateString) => unavailable.add(dateString));
+  });
+
+  return unavailable;
+}
+
+function buildMarkedDates(
+  checkInDate,
+  checkOutDate,
+  unavailableBookings = []
+) {
   const marked = {};
+
+  unavailableBookings.forEach((booking) => {
+    if (!booking?.checkInDate || !booking?.checkOutDate) return;
+
+    const reservedNights = enumerateDates(
+      booking.checkInDate,
+      booking.checkOutDate,
+      false
+    );
+
+    reservedNights.forEach((dateString, index) => {
+      marked[dateString] = {
+        startingDay: index === 0,
+        endingDay: index === reservedNights.length - 1,
+        color: "#fee2e2",
+        textColor: "#b91c1c",
+      };
+    });
+  });
 
   if (!checkInDate) return marked;
 
@@ -131,11 +171,11 @@ function buildMarkedDates(checkInDate, checkOutDate) {
     return marked;
   }
 
-  const allDates = enumerateDates(checkInDate, checkOutDate);
+  const selectedDates = enumerateDates(checkInDate, checkOutDate);
 
-  allDates.forEach((dateString, index) => {
+  selectedDates.forEach((dateString, index) => {
     const isStart = index === 0;
-    const isEnd = index === allDates.length - 1;
+    const isEnd = index === selectedDates.length - 1;
 
     marked[dateString] = {
       startingDay: isStart,
@@ -168,9 +208,10 @@ export default function BookingDetailsModal({
   onClose,
   onBookingCreated,
   onConfirmBooking,
+  unavailableBookings = [],
 }) {
-  const [checkInDate, setCheckInDate] = useState(getTodayString());
-  const [checkOutDate, setCheckOutDate] = useState(getTomorrowString());
+  const [checkInDate, setCheckInDate] = useState(null);
+  const [checkOutDate, setCheckOutDate] = useState(null);
   const [checkInTime, setCheckInTime] = useState(new Date());
   const [showTimePicker, setShowTimePicker] = useState(false);
 
@@ -189,6 +230,41 @@ export default function BookingDetailsModal({
   const roomName = room?.name || room?.roomName || "Selected Room";
   const roomId = room?.id || room?.roomId || null;
   const maxGuests = Number(room?.maxGuests || room?.capacity || 0);
+
+  useEffect(() => {
+    if (!visible) return;
+
+    setCheckInDate(null);
+    setCheckOutDate(null);
+    setCheckInTime(new Date());
+    setShowTimePicker(false);
+    setAdults(1);
+    setChildren(0);
+    setPets(0);
+    setSelectedAddOns({});
+    setSpecialRequest("");
+  }, [visible, roomId]);
+
+  const unavailableNightSet = useMemo(
+    () => buildUnavailableNightSet(unavailableBookings),
+    [unavailableBookings]
+  );
+
+  const hasUndatedActiveBooking = useMemo(
+    () =>
+      unavailableBookings.some(
+        (booking) => !booking?.checkInDate || !booking?.checkOutDate
+      ),
+    [unavailableBookings]
+  );
+
+  const rangeContainsUnavailableNight = (startDate, endDate) => {
+    if (!startDate || !endDate) return false;
+
+    return enumerateDates(startDate, endDate, false).some((dateString) =>
+      unavailableNightSet.has(dateString)
+    );
+  };
 
   const totalGuests = adults + children;
   const stayNights = useMemo(
@@ -223,8 +299,13 @@ export default function BookingDetailsModal({
   const shouldSuggestExtraBed = children > 0 && !selectedAddOns.extra_bed;
 
   const markedDates = useMemo(
-    () => buildMarkedDates(checkInDate, checkOutDate),
-    [checkInDate, checkOutDate]
+    () =>
+      buildMarkedDates(
+        checkInDate,
+        checkOutDate,
+        unavailableBookings
+      ),
+    [checkInDate, checkOutDate, unavailableBookings]
   );
 
   const decrease = (setter, currentValue, minimumValue) => {
@@ -246,16 +327,41 @@ export default function BookingDetailsModal({
 
   const handleDayPress = (day) => {
     const selectedDate = day.dateString;
+    const selectingNewCheckIn = !checkInDate || !!checkOutDate;
 
-    if (!checkInDate || (checkInDate && checkOutDate)) {
+    if (selectingNewCheckIn) {
+      if (unavailableNightSet.has(selectedDate)) {
+        Alert.alert(
+          "Date Unavailable",
+          "That night is already reserved. Please choose another check-in date."
+        );
+        return;
+      }
+
       setCheckInDate(selectedDate);
       setCheckOutDate(null);
       return;
     }
 
     if (selectedDate <= checkInDate) {
+      if (unavailableNightSet.has(selectedDate)) {
+        Alert.alert(
+          "Date Unavailable",
+          "That night is already reserved. Please choose another check-in date."
+        );
+        return;
+      }
+
       setCheckInDate(selectedDate);
       setCheckOutDate(null);
+      return;
+    }
+
+    if (rangeContainsUnavailableNight(checkInDate, selectedDate)) {
+      Alert.alert(
+        "Dates Unavailable",
+        "Your selected stay includes one or more reserved nights. Choose an earlier checkout date or a different check-in date."
+      );
       return;
     }
 
@@ -263,8 +369,8 @@ export default function BookingDetailsModal({
   };
 
   const resetDateSelection = () => {
-    setCheckInDate(getTodayString());
-    setCheckOutDate(getTomorrowString());
+    setCheckInDate(null);
+    setCheckOutDate(null);
   };
 
   const handleTimeChange = (event, selectedTime) => {
@@ -300,6 +406,22 @@ export default function BookingDetailsModal({
       Alert.alert(
         "Guest Limit Exceeded",
         `This room only allows up to ${maxGuests} guests.`
+      );
+      return;
+    }
+
+    if (hasUndatedActiveBooking) {
+      Alert.alert(
+        "Availability Unknown",
+        "This room has an active booking without a checkout date. Please contact the hotel before booking it."
+      );
+      return;
+    }
+
+    if (rangeContainsUnavailableNight(checkInDate, checkOutDate)) {
+      Alert.alert(
+        "Dates Unavailable",
+        "This room is already reserved during part of your selected stay."
       );
       return;
     }
@@ -465,6 +587,24 @@ export default function BookingDetailsModal({
             <Text style={styles.helperText}>
               Tap a check-in date first, then tap a check-out date.
             </Text>
+
+            <View style={styles.calendarLegend}>
+              <View style={styles.legendItem}>
+                <View style={[styles.legendSwatch, styles.selectedSwatch]} />
+                <Text style={styles.legendText}>Your selected stay</Text>
+              </View>
+
+              <View style={styles.legendItem}>
+                <View style={[styles.legendSwatch, styles.reservedSwatch]} />
+                <Text style={styles.legendText}>Reserved night</Text>
+              </View>
+            </View>
+
+            {hasUndatedActiveBooking && (
+              <Text style={styles.warningText}>
+                This room has an active booking without a checkout date. Online availability cannot be confirmed yet.
+              </Text>
+            )}
 
             <Calendar
               current={checkInDate || getTodayString()}
@@ -633,12 +773,14 @@ export default function BookingDetailsModal({
             <Pressable
               style={[
                 styles.confirmButton,
-                loading || hasGuestCapacityWarning
+                loading || hasGuestCapacityWarning || hasUndatedActiveBooking
                   ? styles.confirmButtonDisabled
                   : null,
               ]}
               onPress={handleConfirmBooking}
-              disabled={loading || hasGuestCapacityWarning}
+              disabled={
+                loading || hasGuestCapacityWarning || hasUndatedActiveBooking
+              }
             >
               {loading ? (
                 <ActivityIndicator color="#fff" />
@@ -811,6 +953,36 @@ const styles = StyleSheet.create({
     color: "#6b7280",
     fontSize: 12,
     marginTop: 8,
+  },
+  calendarLegend: {
+    flexDirection: "row",
+    flexWrap: "wrap",
+    marginTop: 10,
+    marginBottom: 2,
+  },
+  legendItem: {
+    flexDirection: "row",
+    alignItems: "center",
+    marginRight: 16,
+    marginBottom: 6,
+  },
+  legendSwatch: {
+    width: 14,
+    height: 14,
+    borderRadius: 4,
+    marginRight: 6,
+  },
+  selectedSwatch: {
+    backgroundColor: "#111827",
+  },
+  reservedSwatch: {
+    backgroundColor: "#fee2e2",
+    borderWidth: 1,
+    borderColor: "#ef4444",
+  },
+  legendText: {
+    color: "#6b7280",
+    fontSize: 12,
   },
   calendar: {
     marginTop: 12,
