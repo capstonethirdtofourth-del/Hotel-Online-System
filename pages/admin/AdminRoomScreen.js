@@ -21,7 +21,8 @@ import {
   updateDoc,
   serverTimestamp,
 } from "firebase/firestore";
-import { db } from "../../FirebaseConfig";
+import { auth, db } from "../../FirebaseConfig";
+import { releaseBookingLocksAndUpdateStatus } from "../../services/bookingLockService";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 
 export default function AdminRoomScreen() {
@@ -286,10 +287,15 @@ export default function AdminRoomScreen() {
           try {
             setProcessingAction("cancel");
 
-            await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
-              status: "cancelled",
-              cancelledAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
+            await releaseBookingLocksAndUpdateStatus({
+              bookingId: selectedRoom.booking.id,
+              newStatus: "cancelled",
+              actorId: auth.currentUser?.uid || "admin",
+              requireOwner: false,
+              additionalFields: {
+                cancelledAt: serverTimestamp(),
+                cancelledBy: auth.currentUser?.uid || "admin",
+              },
             });
 
             Alert.alert("Success", "Booking cancelled.");
@@ -318,10 +324,15 @@ export default function AdminRoomScreen() {
           try {
             setProcessingAction("checkout");
 
-            await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
-              status: "checked-out",
-              checkOutAt: serverTimestamp(),
-              updatedAt: serverTimestamp(),
+            await releaseBookingLocksAndUpdateStatus({
+              bookingId: selectedRoom.booking.id,
+              newStatus: "checked-out",
+              actorId: auth.currentUser?.uid || "admin",
+              requireOwner: false,
+              additionalFields: {
+                checkOutAt: serverTimestamp(),
+                checkedOutBy: auth.currentUser?.uid || "admin",
+              },
             });
 
             Alert.alert("Success", "Room checked out successfully.");

@@ -22,10 +22,13 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
-  addDoc,
 } from "firebase/firestore";
 import { auth, db } from "./FirebaseConfig";
 import { useFonts } from "expo-font";
+import {
+  createBookingWithNightLocks,
+  releaseBookingLocksAndUpdateStatus,
+} from "./services/bookingLockService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -683,19 +686,43 @@ export default function App() {
         updatedAt: serverTimestamp(),
       };
 
-      const docRef = await addDoc(bookingsRef, cleanUndefined(bookingPayload));
+      if (!isDateRangeBooking) {
+        Alert.alert(
+          "Select Stay Dates",
+          "Please choose both check-in and checkout dates before booking."
+        );
+        return false;
+      }
+
+      const createdBooking = await createBookingWithNightLocks(
+        cleanUndefined(bookingPayload)
+      );
 
       await fetchReservedRooms();
 
       setRoomStatusRefreshKey((prev) => prev + 1);
 
-      return {
-        id: docRef.id,
-        ...bookingPayload,
-      };
+      return createdBooking;
     } catch (error) {
       console.log("Error booking room:", error);
-      Alert.alert("Error", "Failed to reserve room.");
+
+      if (error.code === "booking/date-conflict") {
+        Alert.alert(
+          "Room Just Booked",
+          `Another guest reserved this room for ${error.conflictDate || "one of your selected dates"}. Please choose different dates.`
+        );
+      } else if (error.code === "booking/stay-too-long") {
+        Alert.alert("Stay Too Long", error.message);
+      } else if (
+        error.code === "booking/invalid-date" ||
+        error.code === "booking/invalid-range" ||
+        error.code === "booking/missing-dates"
+      ) {
+        Alert.alert("Invalid Stay Dates", error.message);
+      } else {
+        Alert.alert("Error", "Failed to reserve room.");
+      }
+
       return false;
     }
   };
@@ -715,11 +742,15 @@ export default function App() {
           try {
             setCancellingRoomId(bookingId);
 
-            await updateDoc(doc(db, "roomBookings", bookingId), {
-              status: "cancelled",
-              cancelledAt: serverTimestamp(),
-              cancelledBy: user.uid,
-              updatedAt: serverTimestamp(),
+            await releaseBookingLocksAndUpdateStatus({
+              bookingId,
+              newStatus: "cancelled",
+              actorId: user.uid,
+              requireOwner: true,
+              additionalFields: {
+                cancelledAt: serverTimestamp(),
+                cancelledBy: user.uid,
+              },
             });
 
             setReservedRooms((prev) =>
