@@ -17,17 +17,19 @@ import {
   collection,
   getDocs,
   addDoc,
+  getDoc,
   doc,
   updateDoc,
   deleteDoc,
   query,
   where,
   serverTimestamp,
+  Timestamp,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "../FirebaseConfig";
 
 import CartModal from "../pages/components/CartModal";
-import OrdersModal from "../pages/components/OrdersModal";
 import ItemOptionsModal from "../pages/components/ItemOptionsModal";
 import { useFonts } from "expo-font";
 
@@ -47,10 +49,6 @@ export default function FoodMenuScreen() {
   const [selectedQty, setSelectedQty] = useState(1);
   const [addingToCart, setAddingToCart] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
-  const [ordersVisible, setOrdersVisible] = useState(false);
-  const [userOrders, setUserOrders] = useState([]);
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [cancellingOrderId, setCancellingOrderId] = useState(null);
   const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
   const [previewImage, setPreviewImage] = useState(null);
   const [previewTitle, setPreviewTitle] = useState("");
@@ -79,40 +77,6 @@ export default function FoodMenuScreen() {
     }
   };
 
-  const fetchUserOrders = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      setLoadingOrders(true);
-
-      const ordersRef = collection(db, "orders");
-      const q = query(ordersRef, where("userId", "==", user.uid));
-      const snapshot = await getDocs(q);
-
-      const data = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-
-      const cancellableOrders = data.filter(
-        (order) => order.status === "pending" || order.status === "confirmed"
-      );
-
-      cancellableOrders.sort((a, b) => {
-        const aTime = a.createdAt?.seconds || 0;
-        const bTime = b.createdAt?.seconds || 0;
-        return bTime - aTime;
-      });
-
-      setUserOrders(cancellableOrders);
-    } catch (error) {
-      console.log("Error fetching orders:", error);
-      Alert.alert("Error", "Failed to load orders.");
-    } finally {
-      setLoadingOrders(false);
-    }
-  };
 
   const fetchMenu = async () => {
     try {
@@ -248,10 +212,7 @@ export default function FoodMenuScreen() {
     setItemModalVisible(true);
   };
 
-  const openOrdersModal = async () => {
-    setOrdersVisible(true);
-    await fetchUserOrders();
-  };
+
 
 
   const addToCart = async (item, variant, quantity) => {
@@ -379,36 +340,6 @@ export default function FoodMenuScreen() {
     }
   };
 
-  const cancelOrder = async (order) => {
-    const user = auth.currentUser;
-    if (!user || !order) return false;
-
-    try {
-      setCancellingOrderId(order.id);
-
-      await updateDoc(doc(db, "orders", order.id), {
-        status: "cancelled",
-        cancelledAt: serverTimestamp(),
-        cancelledBy: user.uid,
-        updatedAt: serverTimestamp(),
-      });
-
-      // remove from UI immediately
-      setUserOrders((prev) =>
-        prev.filter((item) => item.id !== order.id)
-      );
-
-      Alert.alert("Order Cancelled", "Your order has been cancelled.");
-
-      return true;
-    } catch (error) {
-      console.log("Error cancelling order:", error);
-      Alert.alert("Error", "Failed to cancel order.");
-      return false;
-    } finally {
-      setCancellingOrderId(null);
-    }
-  };
 
   const increaseQty = async (cartItem) => {
     const user = auth.currentUser;
@@ -474,6 +405,34 @@ export default function FoodMenuScreen() {
     try {
       setPlacingOrder(true);
 
+      const userSnap = await getDoc(doc(db, "users", user.uid));
+      const userProfile = userSnap.exists() ? userSnap.data() : {};
+
+      const roomBookingsRef = collection(db, "roomBookings");
+      const [checkedInSnap, bookedSnap] = await Promise.all([
+        getDocs(
+          query(
+            roomBookingsRef,
+            where("userId", "==", user.uid),
+            where("status", "==", "checked-in")
+          )
+        ),
+        getDocs(
+          query(
+            roomBookingsRef,
+            where("userId", "==", user.uid),
+            where("status", "==", "booked")
+          )
+        ),
+      ]);
+
+      const activeBookingDoc = !checkedInSnap.empty
+        ? checkedInSnap.docs[0]
+        : !bookedSnap.empty
+        ? bookedSnap.docs[0]
+        : null;
+      const activeBooking = activeBookingDoc?.data() || {};
+
       const orderItems = cart.map((item) => ({
         localId: item.localId,
         name: item.name,
@@ -485,22 +444,52 @@ export default function FoodMenuScreen() {
         subtotal: item.price * item.quantity,
       }));
 
-      await addDoc(collection(db, "orders"), {
+      const cartSnapshot = await getDocs(
+        collection(db, "users", user.uid, "cartItems")
+      );
+      const orderRef = doc(collection(db, "orders"));
+      const batch = writeBatch(db);
+
+      batch.set(orderRef, {
         userId: user.uid,
         userEmail: user.email || "",
+        userFullName: userProfile.fullName || "",
+        guestName: userProfile.fullName || "",
+        guestPhone: userProfile.phone || "",
+        bookingId: activeBookingDoc?.id || "",
+        roomId: activeBooking.roomId || "",
+        roomName: activeBooking.roomName || activeBooking.name || "",
+        roomNumber: activeBooking.roomNumber || "",
         items: orderItems,
         total: cartTotal,
         status: "pending",
+        statusMessage: "Your food order has been submitted.",
+        estimatedMinutes: null,
+        estimatedCompletionAt: null,
+        statusHistory: [
+          {
+            status: "pending",
+            message: "Your food order has been submitted.",
+            changedAt: Timestamp.now(),
+            changedBy: user.uid,
+          },
+        ],
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
-      const cartSnapshot = await getDocs(collection(db, "users", user.uid, "cartItems"));
-      await Promise.all(cartSnapshot.docs.map((cartDoc) => deleteDoc(cartDoc.ref)));
+      cartSnapshot.docs.forEach((cartDoc) => batch.delete(cartDoc.ref));
+      await batch.commit();
 
       setCart([]);
       setCartVisible(false);
 
-      Alert.alert("Order placed", "Your order has been added successfully.");
+      Alert.alert(
+        "Order placed",
+        activeBookingDoc
+          ? "Your order was sent to the hotel. Track its progress from Status in the sidebar."
+          : "Your order was sent, but no room is currently assigned. Track it from Status in the sidebar."
+      );
     } catch (error) {
       console.log("Error placing order:", error);
       Alert.alert("Error", "Failed to place order.");
@@ -658,12 +647,6 @@ export default function FoodMenuScreen() {
         </View>
       </TouchableOpacity>
 
-      <TouchableOpacity
-        style={styles.floatingOrders}
-        onPress={openOrdersModal}
-      >
-        <Ionicons name="receipt-outline" size={22} color="#fff" />
-      </TouchableOpacity>
       
       <ItemOptionsModal
         visible={itemModalVisible}
@@ -688,15 +671,6 @@ export default function FoodMenuScreen() {
         onPlaceOrder={placeOrder}
         placingOrder={placingOrder}
         styles={styles}
-      />
-
-      <OrdersModal
-        visible={ordersVisible}
-        onClose={() => setOrdersVisible(false)}
-        loadingOrders={loadingOrders}
-        userOrders={userOrders}
-        onCancelOrder={cancelOrder}
-        cancellingOrderId={cancellingOrderId}
       />
 
       <Modal
@@ -922,18 +896,7 @@ const styles = StyleSheet.create({
     color: "#888",
     fontSize: 15,
   },
-  floatingOrders: {
-    position: "absolute",
-    right: 90,
-    top: 10,
-    backgroundColor: "#8b5e34",
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    justifyContent: "center",
-    alignItems: "center",
-    elevation: 4,
-  },
+
 
   imageTapBox: {
     position: "relative",

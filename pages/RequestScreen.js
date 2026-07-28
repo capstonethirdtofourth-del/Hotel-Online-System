@@ -23,6 +23,7 @@ import {
   getDocs,
   query,
   where,
+  Timestamp,
 } from "firebase/firestore";
 
 const requestCategories = [
@@ -116,6 +117,8 @@ export default function RequestScreen() {
 
       let roomId = "";
       let roomName = "";
+      let roomNumber = "";
+      let bookingId = "";
 
       const activeRoomDoc =
         !checkedInSnap.empty
@@ -135,20 +138,36 @@ export default function RequestScreen() {
 
       const roomData = activeRoomDoc.data();
       roomId = roomData.roomId || "";
-      roomName = roomData.name || "";
+      roomName = roomData.roomName || roomData.name || "";
+      roomNumber = roomData.roomNumber || "";
+      bookingId = activeRoomDoc.id;
 
       await addDoc(collection(db, "requests"), {
         userId: user.uid,
         userEmail: user.email || "",
         userFullName,
         userPhone,
+        bookingId,
         roomId,
         roomName,
+        roomNumber,
         requestTypeValues: selectedCategories.map((item) => item.value),
         requestTypeLabels: selectedCategories.map((item) => item.label),
         requestText: requestText.trim(),
         status: "pending",
+        statusMessage: "Your service request has been submitted.",
+        estimatedMinutes: null,
+        estimatedCompletionAt: null,
+        statusHistory: [
+          {
+            status: "pending",
+            message: "Your service request has been submitted.",
+            changedAt: Timestamp.now(),
+            changedBy: user.uid,
+          },
+        ],
         createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       Alert.alert("Request Sent", "Your request has been submitted to the hotel.");

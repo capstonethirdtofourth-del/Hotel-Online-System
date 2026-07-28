@@ -15,25 +15,22 @@ import { collection, onSnapshot } from "firebase/firestore";
 import { auth, db } from "../../FirebaseConfig";
 import StatusTimeline from "../components/StatusTimeline";
 import {
-  REQUEST_STATUS_FLOW,
-  REQUEST_STATUS_LABELS,
+  FOOD_STATUS_FLOW,
+  FOOD_STATUS_LABELS,
   getDefaultStatusMessage,
   updateActivityStatus,
 } from "../../services/activityStatusService";
 
 const FILTERS = [
   { key: "all", label: "All" },
-  { key: "pending", label: "Pending" },
-  { key: "active", label: "Active" },
+  { key: "new", label: "New" },
+  { key: "kitchen", label: "Kitchen" },
+  { key: "delivery", label: "Delivery" },
   { key: "finished", label: "Finished" },
 ];
 
 const ESTIMATE_OPTIONS = [5, 10, 15, 20, 30, 45];
-const STATUS_OPTIONS = [
-  ...REQUEST_STATUS_FLOW,
-  "unable_to_complete",
-  "cancelled",
-];
+const STATUS_OPTIONS = [...FOOD_STATUS_FLOW, "cancelled"];
 
 function timestampToDate(value) {
   if (!value) return null;
@@ -54,34 +51,35 @@ function formatDateTime(value) {
   });
 }
 
+function getOrderTitle(order) {
+  if (!Array.isArray(order.items) || order.items.length === 0) {
+    return "Food Order";
+  }
+
+  const first = order.items[0]?.name || "Food Order";
+  return order.items.length > 1 ? `${first} +${order.items.length - 1} more` : first;
+}
+
 function getTimeValue(item) {
   return item.createdAt?.seconds || item.updatedAt?.seconds || 0;
 }
 
-function normalizeStatus(status) {
-  if (status === "fulfilled") return "completed";
-  if (status === "confirmed") return "acknowledged";
-  return status || "pending";
-}
-
-function matchesFilter(request, filter) {
-  const status = normalizeStatus(request.status);
+function matchesFilter(order, filter) {
+  const status = order.status || "pending";
 
   if (filter === "all") return true;
-  if (filter === "pending") return status === "pending";
-  if (filter === "active") return ["acknowledged", "ongoing"].includes(status);
-  if (filter === "finished") {
-    return ["completed", "unable_to_complete", "cancelled"].includes(status);
-  }
-
+  if (filter === "new") return ["pending", "confirmed"].includes(status);
+  if (filter === "kitchen") return ["preparing", "ready"].includes(status);
+  if (filter === "delivery") return status === "out_for_delivery";
+  if (filter === "finished") return ["delivered", "cancelled"].includes(status);
   return true;
 }
 
-export default function AdminRequestScreen() {
-  const [requests, setRequests] = useState([]);
+export default function AdminFoodOrderScreen() {
+  const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("all");
-  const [selectedRequest, setSelectedRequest] = useState(null);
+  const [selectedOrder, setSelectedOrder] = useState(null);
   const [selectedStatus, setSelectedStatus] = useState("pending");
   const [estimatedMinutes, setEstimatedMinutes] = useState("");
   const [statusMessage, setStatusMessage] = useState("");
@@ -89,7 +87,7 @@ export default function AdminRequestScreen() {
 
   useEffect(() => {
     const unsubscribe = onSnapshot(
-      collection(db, "requests"),
+      collection(db, "orders"),
       (snapshot) => {
         const data = snapshot.docs.map((docSnap) => ({
           id: docSnap.id,
@@ -97,56 +95,54 @@ export default function AdminRequestScreen() {
         }));
 
         data.sort((a, b) => getTimeValue(b) - getTimeValue(a));
-        setRequests(data);
+        setOrders(data);
         setLoading(false);
       },
       (error) => {
-        console.log("Admin request listener error:", error);
+        console.log("Admin order listener error:", error);
         setLoading(false);
-        Alert.alert("Error", "Failed to load service requests.");
+        Alert.alert("Error", "Failed to load food orders.");
       }
     );
 
     return unsubscribe;
   }, []);
 
-  const filteredRequests = useMemo(
-    () => requests.filter((request) => matchesFilter(request, activeFilter)),
-    [requests, activeFilter]
+  const filteredOrders = useMemo(
+    () => orders.filter((order) => matchesFilter(order, activeFilter)),
+    [orders, activeFilter]
   );
 
-  const openRequest = (request) => {
-    const status = normalizeStatus(request.status);
-    setSelectedRequest(request);
+  const openOrder = (order) => {
+    const status = order.status || "pending";
+    setSelectedOrder(order);
     setSelectedStatus(status);
     setEstimatedMinutes(
-      Number(request.estimatedMinutes) > 0
-        ? String(request.estimatedMinutes)
-        : ""
+      Number(order.estimatedMinutes) > 0 ? String(order.estimatedMinutes) : ""
     );
     setStatusMessage(
-      request.statusMessage || getDefaultStatusMessage("requests", status)
+      order.statusMessage || getDefaultStatusMessage("orders", status)
     );
   };
 
-  const closeRequest = () => {
+  const closeOrder = () => {
     if (saving) return;
-    setSelectedRequest(null);
+    setSelectedOrder(null);
     setEstimatedMinutes("");
     setStatusMessage("");
   };
 
   const chooseStatus = (status) => {
     setSelectedStatus(status);
-    setStatusMessage(getDefaultStatusMessage("requests", status));
+    setStatusMessage(getDefaultStatusMessage("orders", status));
 
-    if (["completed", "unable_to_complete", "cancelled"].includes(status)) {
+    if (["delivered", "cancelled"].includes(status)) {
       setEstimatedMinutes("");
     }
   };
 
   const saveUpdate = async () => {
-    if (!selectedRequest || saving) return;
+    if (!selectedOrder || saving) return;
 
     const numericEstimate = estimatedMinutes.trim()
       ? Number(estimatedMinutes)
@@ -164,24 +160,21 @@ export default function AdminRequestScreen() {
       setSaving(true);
 
       await updateActivityStatus({
-        collectionName: "requests",
-        documentId: selectedRequest.id,
+        collectionName: "orders",
+        documentId: selectedOrder.id,
         status: selectedStatus,
         estimatedMinutes: numericEstimate,
         statusMessage,
         actorId: auth.currentUser?.uid || "admin",
       });
 
-      Alert.alert(
-        "Request Updated",
-        "The guest can now see the new request status."
-      );
-      setSelectedRequest(null);
+      Alert.alert("Order Updated", "The guest can now see the new order status.");
+      setSelectedOrder(null);
       setEstimatedMinutes("");
       setStatusMessage("");
     } catch (error) {
-      console.log("Request status update error:", error);
-      Alert.alert("Error", "Failed to update the request.");
+      console.log("Order status update error:", error);
+      Alert.alert("Error", "Failed to update the order.");
     } finally {
       setSaving(false);
     }
@@ -191,7 +184,7 @@ export default function AdminRequestScreen() {
     return (
       <View style={styles.loaderBox}>
         <ActivityIndicator size="large" color="#6b3200" />
-        <Text style={styles.loadingText}>Loading service requests...</Text>
+        <Text style={styles.loadingText}>Loading food orders...</Text>
       </View>
     );
   }
@@ -199,9 +192,9 @@ export default function AdminRequestScreen() {
   return (
     <View style={styles.container}>
       <View style={styles.header}>
-        <Text style={styles.headerTitle}>Guest Request Management</Text>
+        <Text style={styles.headerTitle}>Food Order Management</Text>
         <Text style={styles.headerSubtitle}>
-          Acknowledge, estimate, process, and complete requests
+          Update preparation, delivery, and estimated time
         </Text>
       </View>
 
@@ -212,9 +205,7 @@ export default function AdminRequestScreen() {
       >
         {FILTERS.map((filter) => {
           const active = activeFilter === filter.key;
-          const count = requests.filter((request) =>
-            matchesFilter(request, filter.key)
-          ).length;
+          const count = orders.filter((order) => matchesFilter(order, filter.key)).length;
 
           return (
             <TouchableOpacity
@@ -222,12 +213,7 @@ export default function AdminRequestScreen() {
               style={[styles.filterChip, active && styles.filterChipActive]}
               onPress={() => setActiveFilter(filter.key)}
             >
-              <Text
-                style={[
-                  styles.filterText,
-                  active && styles.filterTextActive,
-                ]}
-              >
+              <Text style={[styles.filterText, active && styles.filterTextActive]}>
                 {filter.label} ({count})
               </Text>
             </TouchableOpacity>
@@ -239,53 +225,62 @@ export default function AdminRequestScreen() {
         showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.content}
       >
-        {filteredRequests.length === 0 ? (
+        {filteredOrders.length === 0 ? (
           <View style={styles.emptyBox}>
-            <Ionicons name="clipboard-outline" size={42} color="#9a8a7d" />
-            <Text style={styles.emptyTitle}>No requests in this section</Text>
+            <Ionicons name="restaurant-outline" size={42} color="#9a8a7d" />
+            <Text style={styles.emptyTitle}>No orders in this section</Text>
           </View>
         ) : (
-          filteredRequests.map((request) => {
-            const status = normalizeStatus(request.status);
+          filteredOrders.map((order) => {
+            const status = order.status || "pending";
 
             return (
               <TouchableOpacity
-                key={request.id}
+                key={order.id}
                 style={styles.card}
-                onPress={() => openRequest(request)}
+                onPress={() => openOrder(order)}
                 activeOpacity={0.88}
               >
                 <View style={styles.cardHeader}>
                   <View style={styles.cardTitleBox}>
-                    <Text style={styles.cardTitle}>
-                      {request.requestTypeLabels?.join(", ") || "Service Request"}
-                    </Text>
-                    <Text style={styles.requestText}>
-                      {request.requestText || "No details"}
+                    <Text style={styles.cardTitle}>{getOrderTitle(order)}</Text>
+                    <Text style={styles.metaText}>
+                      Guest: {order.guestName || order.userFullName || order.userEmail || "Unknown"}
                     </Text>
                     <Text style={styles.metaText}>
-                      Guest: {request.userFullName || request.userEmail || "Unknown"}
+                      Room: {order.roomName || order.roomNumber || "Not assigned"}
                     </Text>
                     <Text style={styles.metaText}>
-                      Room: {request.roomName || "Not assigned"}
-                    </Text>
-                    <Text style={styles.metaText}>
-                      Submitted: {formatDateTime(request.createdAt)}
+                      Ordered: {formatDateTime(order.createdAt)}
                     </Text>
                   </View>
 
                   <View style={styles.statusBadge}>
                     <Text style={styles.statusBadgeText}>
-                      {REQUEST_STATUS_LABELS[status] || status}
+                      {FOOD_STATUS_LABELS[status] || status}
                     </Text>
                   </View>
                 </View>
 
+                <View style={styles.itemList}>
+                  {(order.items || []).slice(0, 3).map((item, index) => (
+                    <Text key={`${item.name}-${index}`} style={styles.itemText}>
+                      {item.quantity || 1}× {item.name}
+                      {item.variantLabel ? ` (${item.variantLabel})` : ""}
+                    </Text>
+                  ))}
+                  {(order.items || []).length > 3 ? (
+                    <Text style={styles.moreText}>
+                      +{order.items.length - 3} more item(s)
+                    </Text>
+                  ) : null}
+                </View>
+
                 <View style={styles.cardFooter}>
-                  <Text style={styles.messagePreview} numberOfLines={2}>
-                    {request.statusMessage || "Request submitted."}
+                  <Text style={styles.totalText}>
+                    ₱{Number(order.total || 0).toLocaleString("en-PH")}
                   </Text>
-                  <Text style={styles.openText}>Manage ›</Text>
+                  <Text style={styles.openText}>Manage order ›</Text>
                 </View>
               </TouchableOpacity>
             );
@@ -294,65 +289,53 @@ export default function AdminRequestScreen() {
       </ScrollView>
 
       <Modal
-        visible={!!selectedRequest}
+        visible={!!selectedOrder}
         transparent
         animationType="slide"
-        onRequestClose={closeRequest}
+        onRequestClose={closeOrder}
       >
         <View style={styles.modalOverlay}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
-                <Text style={styles.modalTitle}>Update Guest Request</Text>
+                <Text style={styles.modalTitle}>Update Food Order</Text>
                 <Text style={styles.modalSubtitle}>
-                  {selectedRequest?.requestTypeLabels?.join(", ") || "Service Request"}
+                  {selectedOrder ? getOrderTitle(selectedOrder) : ""}
                 </Text>
               </View>
-              <TouchableOpacity onPress={closeRequest} disabled={saving}>
+              <TouchableOpacity onPress={closeOrder} disabled={saving}>
                 <Ionicons name="close" size={26} color="#333" />
               </TouchableOpacity>
             </View>
 
-            {selectedRequest ? (
+            {selectedOrder ? (
               <ScrollView showsVerticalScrollIndicator={false}>
                 <View style={styles.infoBox}>
                   <Text style={styles.infoText}>
-                    Guest: {selectedRequest.userFullName || selectedRequest.userEmail || "Unknown"}
+                    Guest: {selectedOrder.guestName || selectedOrder.userFullName || selectedOrder.userEmail || "Unknown"}
                   </Text>
                   <Text style={styles.infoText}>
-                    Room: {selectedRequest.roomName || "Not assigned"}
+                    Room: {selectedOrder.roomName || selectedOrder.roomNumber || "Not assigned"}
                   </Text>
-                  <Text style={styles.infoRequestText}>
-                    {selectedRequest.requestText || "No details"}
+                  <Text style={styles.infoText}>
+                    Total: ₱{Number(selectedOrder.total || 0).toLocaleString("en-PH")}
                   </Text>
                 </View>
 
-                <StatusTimeline
-                  type="requests"
-                  status={normalizeStatus(selectedRequest.status)}
-                />
+                <StatusTimeline type="orders" status={selectedOrder.status || "pending"} />
 
                 <Text style={styles.sectionTitle}>New Status</Text>
                 <View style={styles.chipWrap}>
                   {STATUS_OPTIONS.map((status) => {
                     const active = selectedStatus === status;
-
                     return (
                       <TouchableOpacity
                         key={status}
-                        style={[
-                          styles.statusChip,
-                          active && styles.statusChipActive,
-                        ]}
+                        style={[styles.statusChip, active && styles.statusChipActive]}
                         onPress={() => chooseStatus(status)}
                       >
-                        <Text
-                          style={[
-                            styles.statusChipText,
-                            active && styles.statusChipTextActive,
-                          ]}
-                        >
-                          {REQUEST_STATUS_LABELS[status] || status}
+                        <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
+                          {FOOD_STATUS_LABELS[status] || status}
                         </Text>
                       </TouchableOpacity>
                     );
@@ -363,22 +346,13 @@ export default function AdminRequestScreen() {
                 <View style={styles.chipWrap}>
                   {ESTIMATE_OPTIONS.map((minutes) => {
                     const active = estimatedMinutes === String(minutes);
-
                     return (
                       <TouchableOpacity
                         key={minutes}
-                        style={[
-                          styles.estimateChip,
-                          active && styles.estimateChipActive,
-                        ]}
+                        style={[styles.estimateChip, active && styles.estimateChipActive]}
                         onPress={() => setEstimatedMinutes(String(minutes))}
                       >
-                        <Text
-                          style={[
-                            styles.estimateChipText,
-                            active && styles.estimateChipTextActive,
-                          ]}
-                        >
+                        <Text style={[styles.estimateChipText, active && styles.estimateChipTextActive]}>
                           {minutes} min
                         </Text>
                       </TouchableOpacity>
@@ -389,9 +363,7 @@ export default function AdminRequestScreen() {
                 <TextInput
                   style={styles.input}
                   value={estimatedMinutes}
-                  onChangeText={(value) =>
-                    setEstimatedMinutes(value.replace(/[^0-9]/g, ""))
-                  }
+                  onChangeText={(value) => setEstimatedMinutes(value.replace(/[^0-9]/g, ""))}
                   placeholder="Custom minutes (optional)"
                   keyboardType="number-pad"
                   editable={!saving}
@@ -402,7 +374,7 @@ export default function AdminRequestScreen() {
                   style={styles.textArea}
                   value={statusMessage}
                   onChangeText={setStatusMessage}
-                  placeholder="Example: Housekeeping is on the way."
+                  placeholder="Example: Your food is being prepared."
                   multiline
                   textAlignVertical="top"
                   editable={!saving}
@@ -416,9 +388,7 @@ export default function AdminRequestScreen() {
                   {saving ? (
                     <ActivityIndicator color="#fff" />
                   ) : (
-                    <Text style={styles.saveButtonText}>
-                      Save Status Update
-                    </Text>
+                    <Text style={styles.saveButtonText}>Save Status Update</Text>
                   )}
                 </TouchableOpacity>
               </ScrollView>
@@ -499,12 +469,6 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#2f241d",
   },
-  requestText: {
-    fontSize: 13,
-    color: "#51473f",
-    lineHeight: 18,
-    marginTop: 5,
-  },
   metaText: {
     fontSize: 11,
     color: "#7d6d61",
@@ -515,7 +479,7 @@ const styles = StyleSheet.create({
     borderRadius: 999,
     paddingHorizontal: 10,
     paddingVertical: 6,
-    maxWidth: 115,
+    maxWidth: 110,
   },
   statusBadgeText: {
     color: "#6b3200",
@@ -523,17 +487,32 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: "center",
   },
+  itemList: {
+    marginTop: 10,
+    backgroundColor: "#faf7f4",
+    borderRadius: 12,
+    padding: 10,
+  },
+  itemText: {
+    fontSize: 12,
+    color: "#51473f",
+    marginBottom: 3,
+  },
+  moreText: {
+    fontSize: 11,
+    color: "#8b7e74",
+    marginTop: 2,
+  },
   cardFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
-    alignItems: "flex-end",
-    marginTop: 11,
+    alignItems: "center",
+    marginTop: 12,
   },
-  messagePreview: {
-    flex: 1,
-    fontSize: 12,
-    color: "#66584d",
-    marginRight: 12,
+  totalText: {
+    fontSize: 16,
+    color: "#8b5e34",
+    fontWeight: "800",
   },
   openText: {
     fontSize: 12,
@@ -596,12 +575,6 @@ const styles = StyleSheet.create({
     color: "#51473f",
     fontSize: 13,
     marginBottom: 4,
-  },
-  infoRequestText: {
-    color: "#3e342d",
-    fontSize: 14,
-    lineHeight: 20,
-    marginTop: 7,
   },
   sectionTitle: {
     fontSize: 15,
