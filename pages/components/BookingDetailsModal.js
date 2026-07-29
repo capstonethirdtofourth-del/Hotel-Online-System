@@ -20,37 +20,16 @@ const ADD_ONS = [
   {
     id: "breakfast",
     name: "Breakfast",
-    description: "Recommended for long stays or family bookings",
-    price: 150,
+    description: "Complimentary breakfast for every guest",
     type: "per_person_per_night",
+    defaultSelected: true,
   },
   {
     id: "extra_bed",
     name: "Extra Bed",
-    description: "Good for children or extra guests",
-    price: 300,
+    description: "Optional extra bed for children or additional guests",
     type: "per_night",
-  },
-  {
-    id: "pet_cleaning",
-    name: "Pet Cleaning Fee",
-    description: "Recommended when bringing pets",
-    price: 250,
-    type: "fixed",
-  },
-  {
-    id: "late_checkout",
-    name: "Late Checkout",
-    description: "Extend your checkout time",
-    price: 200,
-    type: "fixed",
-  },
-  {
-    id: "room_decoration",
-    name: "Room Decoration",
-    description: "For birthdays, anniversaries, or surprises",
-    price: 500,
-    type: "fixed",
+    defaultSelected: false,
   },
 ];
 
@@ -218,7 +197,7 @@ export default function BookingDetailsModal({
   const [adults, setAdults] = useState(1);
   const [children, setChildren] = useState(0);
   const [pets, setPets] = useState(0);
-  const [selectedAddOns, setSelectedAddOns] = useState({});
+  const [selectedAddOns, setSelectedAddOns] = useState({ breakfast: true });
   const [specialRequest, setSpecialRequest] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -241,7 +220,7 @@ export default function BookingDetailsModal({
     setAdults(1);
     setChildren(0);
     setPets(0);
-    setSelectedAddOns({});
+    setSelectedAddOns({ breakfast: true });
     setSpecialRequest("");
   }, [visible, roomId]);
 
@@ -273,29 +252,18 @@ export default function BookingDetailsModal({
   );
 
   const selectedAddOnsList = useMemo(() => {
-    return ADD_ONS.filter((addOn) => selectedAddOns[addOn.id]);
+    return ADD_ONS.filter((addOn) => !!selectedAddOns[addOn.id]);
   }, [selectedAddOns]);
 
-  const addOnsTotal = useMemo(() => {
-    return selectedAddOnsList.reduce((total, addOn) => {
-      if (addOn.type === "per_person_per_night") {
-        return total + addOn.price * totalGuests * stayNights;
-      }
-
-      if (addOn.type === "per_night") {
-        return total + addOn.price * stayNights;
-      }
-
-      return total + addOn.price;
-    }, 0);
-  }, [selectedAddOnsList, totalGuests, stayNights]);
-
+  // All add-ons are complimentary and never change the room total.
+  const addOnsTotal = 0;
   const roomSubtotal = roomPriceValue * stayNights;
-  const totalAmount = roomSubtotal + addOnsTotal;
+  const totalAmount = roomSubtotal;
+
+  const breakfastGuestCount = totalGuests;
+  const breakfastTotalServings = totalGuests * stayNights;
 
   const hasGuestCapacityWarning = maxGuests > 0 && totalGuests > maxGuests;
-  const shouldSuggestPetCleaning = pets > 0 && !selectedAddOns.pet_cleaning;
-  const shouldSuggestBreakfast = stayNights >= 2 && !selectedAddOns.breakfast;
   const shouldSuggestExtraBed = children > 0 && !selectedAddOns.extra_bed;
 
   const markedDates = useMemo(
@@ -319,6 +287,29 @@ export default function BookingDetailsModal({
   };
 
   const toggleAddOn = (id) => {
+    if (id === "breakfast" && selectedAddOns.breakfast) {
+      Alert.alert(
+        "Remove Free Breakfast?",
+        "Free breakfast is included for every guest. Are you sure you want to remove it from this booking?",
+        [
+          {
+            text: "Keep Breakfast",
+            style: "cancel",
+          },
+          {
+            text: "Remove Breakfast",
+            style: "destructive",
+            onPress: () =>
+              setSelectedAddOns((prev) => ({
+                ...prev,
+                breakfast: false,
+              })),
+          },
+        ]
+      );
+      return;
+    }
+
     setSelectedAddOns((prev) => ({
       ...prev,
       [id]: !prev[id],
@@ -430,20 +421,29 @@ export default function BookingDetailsModal({
       setLoading(true);
 
       const addOnsForFirestore = selectedAddOnsList.map((addOn) => {
-        let computedTotal = addOn.price;
-
-        if (addOn.type === "per_person_per_night") {
-          computedTotal = addOn.price * totalGuests * stayNights;
-        } else if (addOn.type === "per_night") {
-          computedTotal = addOn.price * stayNights;
+        if (addOn.id === "breakfast") {
+          return {
+            id: addOn.id,
+            name: addOn.name,
+            type: addOn.type,
+            isFree: true,
+            automatic: false,
+            includedByDefault: true,
+            guestCount: breakfastGuestCount,
+            quantityPerNight: breakfastGuestCount,
+            stayNights,
+            totalQuantity: breakfastTotalServings,
+          };
         }
 
         return {
           id: addOn.id,
           name: addOn.name,
-          price: addOn.price,
           type: addOn.type,
-          computedTotal,
+          isFree: true,
+          automatic: false,
+          quantity: 1,
+          stayNights,
         };
       });
 
@@ -698,22 +698,19 @@ export default function BookingDetailsModal({
               </Text>
             )}
 
-            <Text style={styles.sectionTitle}>Recommended Add-ons</Text>
+            <Text style={styles.sectionTitle}>Complimentary Add-ons</Text>
 
-            {shouldSuggestPetCleaning && (
-              <Suggestion text="You added a pet. Pet Cleaning Fee is recommended." />
-            )}
-
-            {shouldSuggestBreakfast && (
-              <Suggestion text="You are staying for 2+ nights. Breakfast is recommended." />
-            )}
+            <Text style={styles.helperText}>
+              These add-ons are free and do not change your booking total.
+            </Text>
 
             {shouldSuggestExtraBed && (
-              <Suggestion text="You added children. Extra Bed may be helpful." />
+              <Suggestion text="You added children. An extra bed may be helpful." />
             )}
 
             {ADD_ONS.map((addOn) => {
               const selected = !!selectedAddOns[addOn.id];
+              const isBreakfast = addOn.id === "breakfast";
 
               return (
                 <Pressable
@@ -729,13 +726,25 @@ export default function BookingDetailsModal({
                   </View>
 
                   <View style={styles.addOnInfo}>
-                    <Text style={styles.addOnName}>{addOn.name}</Text>
+                    <View style={styles.addOnTitleRow}>
+                      <Text style={styles.addOnName}>{addOn.name}</Text>
+                      {isBreakfast && selected && (
+                        <View style={styles.automaticBadge}>
+                          <Text style={styles.automaticBadgeText}>Preselected</Text>
+                        </View>
+                      )}
+                    </View>
+
                     <Text style={styles.addOnDescription}>
-                      {addOn.description}
+                      {isBreakfast
+                        ? selected
+                          ? stayNights > 0
+                            ? `Included for ${breakfastGuestCount} guest${breakfastGuestCount === 1 ? "" : "s"} per day • ${breakfastTotalServings} total serving${breakfastTotalServings === 1 ? "" : "s"}`
+                            : `Included for ${breakfastGuestCount} guest${breakfastGuestCount === 1 ? "" : "s"} per day`
+                          : "Free breakfast removed. Tap to add it back."
+                        : addOn.description}
                     </Text>
                   </View>
-
-                  <Text style={styles.addOnPrice}>{toMoney(addOn.price)}</Text>
                 </Pressable>
               );
             })}
@@ -759,7 +768,7 @@ export default function BookingDetailsModal({
                 value={toMoney(roomSubtotal)}
               />
 
-              <SummaryRow label="Add-ons" value={toMoney(addOnsTotal)} />
+              <SummaryRow label="Complimentary add-ons" value="Included" />
 
               <View style={styles.divider} />
 
@@ -1130,6 +1139,23 @@ const styles = StyleSheet.create({
   },
   addOnInfo: {
     flex: 1,
+  },
+  addOnTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    flexWrap: "wrap",
+  },
+  automaticBadge: {
+    marginLeft: 8,
+    backgroundColor: "#dcfce7",
+    borderRadius: 999,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+  },
+  automaticBadgeText: {
+    color: "#166534",
+    fontSize: 10,
+    fontWeight: "800",
   },
   addOnName: {
     fontSize: 14,
