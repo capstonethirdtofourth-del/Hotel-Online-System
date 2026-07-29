@@ -24,6 +24,7 @@ import {
 import { auth, db } from "../../FirebaseConfig";
 import { releaseBookingLocksAndUpdateStatus } from "../../services/bookingLockService";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
+import { Calendar } from "react-native-calendars";
 
 export default function AdminRoomScreen() {
   const [rooms, setRooms] = useState([]);
@@ -31,7 +32,13 @@ export default function AdminRoomScreen() {
   const [loading, setLoading] = useState(true);
 
   const [selectedRoom, setSelectedRoom] = useState(null);
+  const [selectedBooking, setSelectedBooking] = useState(null);
   const [roomModalVisible, setRoomModalVisible] = useState(false);
+  const [roomModalMode, setRoomModalMode] = useState("manage");
+
+  const [reservationSearch, setReservationSearch] = useState("");
+  const [reservationDateFilter, setReservationDateFilter] = useState("all");
+  const [calendarVisible, setCalendarVisible] = useState(false);
 
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
@@ -81,30 +88,136 @@ export default function AdminRoomScreen() {
     }
   };
 
-  const bookingMap = useMemo(() => {
+  const bookingsByRoom = useMemo(() => {
     const map = {};
+
     bookings.forEach((booking) => {
-      map[booking.roomId] = booking;
+      if (!booking.roomId) return;
+
+      if (!map[booking.roomId]) {
+        map[booking.roomId] = [];
+      }
+
+      map[booking.roomId].push(booking);
     });
+
+    Object.values(map).forEach((roomBookings) => {
+      roomBookings.sort((a, b) => {
+        const aDate = a.checkInDate || "9999-12-31";
+        const bDate = b.checkInDate || "9999-12-31";
+
+        if (aDate !== bDate) {
+          return aDate.localeCompare(bDate);
+        }
+
+        const aTime = a.reservedAt?.seconds || a.createdAt?.seconds || 0;
+        const bTime = b.reservedAt?.seconds || b.createdAt?.seconds || 0;
+        return aTime - bTime;
+      });
+    });
+
     return map;
   }, [bookings]);
 
-  const availableRooms = useMemo(() => {
-    return rooms.filter((room) => !bookingMap[room.id]);
-  }, [rooms, bookingMap]);
+  const roomOverview = useMemo(() => {
+    return rooms.map((room) => {
+      const roomBookings = bookingsByRoom[room.id] || [];
+      const occupiedBooking =
+        roomBookings.find((booking) => booking.status === "checked-in") || null;
+      const reservedBookings = roomBookings.filter(
+        (booking) => booking.status === "booked"
+      );
 
-  const bookedRooms = useMemo(() => {
-    return bookings.filter((booking) => booking.status === "booked");
-  }, [bookings]);
-
-  const occupiedRooms = useMemo(() => {
-    return bookings.filter((booking) => booking.status === "checked-in");
-  }, [bookings]);
+      return {
+        ...room,
+        occupiedBooking,
+        reservedBookings,
+        allActiveBookings: roomBookings,
+      };
+    });
+  }, [rooms, bookingsByRoom]);
 
   const formatDateTime = (timestamp) => {
     if (!timestamp?.seconds) return "Not set";
-    return new Date(timestamp.seconds * 1000).toLocaleString();
+    return new Date(timestamp.seconds * 1000).toLocaleString("en-PH");
   };
+
+  const formatDateOnly = (dateString) => {
+    if (!dateString) return "Date not set";
+
+    const [year, month, day] = String(dateString).split("-").map(Number);
+    const date = new Date(year, month - 1, day);
+
+    if (Number.isNaN(date.getTime())) return dateString;
+
+    return date.toLocaleDateString("en-PH", {
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    });
+  };
+
+  const getLocalDateString = (date = new Date()) => {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    const day = String(date.getDate()).padStart(2, "0");
+    return `${year}-${month}-${day}`;
+  };
+
+  const getYesterdayString = () => {
+    const date = new Date();
+    date.setDate(date.getDate() - 1);
+    return getLocalDateString(date);
+  };
+
+  const bookingIncludesDate = (booking, dateString) => {
+    if (!booking?.checkInDate || !booking?.checkOutDate || !dateString) {
+      return false;
+    }
+
+    // The checkout date is not an occupied night.
+    return (
+      booking.checkInDate <= dateString &&
+      booking.checkOutDate > dateString
+    );
+  };
+
+  const formatBookingRange = (booking) => {
+    if (!booking?.checkInDate && !booking?.checkOutDate) {
+      return "Dates not set";
+    }
+
+    const checkIn = formatDateOnly(booking.checkInDate);
+    const checkOut = formatDateOnly(booking.checkOutDate);
+
+    return `${checkIn} – ${checkOut}`;
+  };
+
+  const getGuestName = (booking) => {
+    return (
+      booking?.guestName ||
+      booking?.userFullName ||
+      booking?.userEmail ||
+      "Unknown guest"
+    );
+  };
+
+  const filteredReservations = useMemo(() => {
+    const reservations = selectedRoom?.reservedBookings || [];
+    const normalizedSearch = reservationSearch.trim().toLowerCase();
+
+    return reservations.filter((booking) => {
+      const matchesGuest =
+        !normalizedSearch ||
+        getGuestName(booking).toLowerCase().includes(normalizedSearch);
+
+      const matchesDate =
+        reservationDateFilter === "all" ||
+        bookingIncludesDate(booking, reservationDateFilter);
+
+      return matchesGuest && matchesDate;
+    });
+  }, [selectedRoom, reservationSearch, reservationDateFilter]);
 
   const formatGuests = (guests) => {
     if (!guests) return "Not set";
@@ -122,44 +235,78 @@ export default function AdminRoomScreen() {
     }
 
     return addOns
-      .map((item) => `${item.name} - ₱${item.computedTotal || item.price || 0}`)
+      .map((item) => {
+        if (item.id === "breakfast") {
+          const guestCount = item.guestCount || item.quantityPerNight || 0;
+          const totalQuantity = item.totalQuantity || 0;
+
+          if (guestCount > 0 && totalQuantity > 0) {
+            return `${item.name} - ${guestCount} guest(s) per day, ${totalQuantity} total serving(s) (Free)`;
+          }
+
+          if (guestCount > 0) {
+            return `${item.name} - ${guestCount} guest(s) per day (Free)`;
+          }
+        }
+
+        return `${item.name} (Free)`;
+      })
       .join("\n");
   };
 
   const getTotalAmount = (booking) => {
-    return booking?.pricing?.totalAmount || booking?.roomPrice || booking?.price || "Not set";
-  };
-
-  const getRoomStatus = (roomId) => {
-    const booking = bookingMap[roomId];
-    if (!booking) return "available";
-    return booking.status;
-  };
-
-  const getRoomBooking = (roomId) => {
-    return bookingMap[roomId] || null;
+    return (
+      booking?.pricing?.totalAmount ||
+      booking?.roomPrice ||
+      booking?.price ||
+      "Not set"
+    );
   };
 
   const openRoomModal = (room) => {
-    const booking = getRoomBooking(room.id);
-
-    setSelectedRoom({
-      ...room,
-      booking,
-      roomStatus: getRoomStatus(room.id),
-    });
-
-    setGuestName(
-      booking?.guestName?.trim() ||
-        booking?.userFullName?.trim() ||
-        ""
-    );
-    setGuestPhone(booking?.guestPhone?.trim() || "");
+    setSelectedRoom(room);
+    setSelectedBooking(null);
+    setRoomModalMode("manage");
+    setReservationSearch("");
+    setReservationDateFilter("all");
+    setGuestName("");
+    setGuestPhone("");
     setRoomModalVisible(true);
+  };
+
+  const openReservationsModal = (room) => {
+    setSelectedRoom(room);
+    setSelectedBooking(null);
+    setRoomModalMode("reservations");
+    setReservationSearch("");
+    setReservationDateFilter("all");
+    setGuestName("");
+    setGuestPhone("");
+    setRoomModalVisible(true);
+  };
+
+  const openBookingDetails = (booking) => {
+    setSelectedBooking(booking);
+    setGuestName(
+      getGuestName(booking) === "Unknown guest" ? "" : getGuestName(booking)
+    );
+    setGuestPhone(booking?.guestPhone || booking?.userPhone || "");
+  };
+
+  const closeBookingDetails = () => {
+    setSelectedBooking(null);
+    setGuestName("");
+    setGuestPhone("");
+    setProcessingAction(null);
   };
 
   const closeRoomModal = () => {
     setSelectedRoom(null);
+    setSelectedBooking(null);
+    setRoomModalMode("manage");
+    setReservationSearch("");
+    setReservationDateFilter("all");
+    setCalendarVisible(false);
     setGuestName("");
     setGuestPhone("");
     setProcessingAction(null);
@@ -183,6 +330,7 @@ export default function AdminRoomScreen() {
         userFullName: guestName.trim(),
         userPhone: guestPhone.trim() || "",
         roomId: selectedRoom.id,
+        roomName: selectedRoom.name,
         name: selectedRoom.name,
         price: selectedRoom.price,
         image: selectedRoom.image,
@@ -192,9 +340,11 @@ export default function AdminRoomScreen() {
         guestPhone: guestPhone.trim() || "",
         status: "booked",
         reservedAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
-      Alert.alert("Success", "Room booked successfully.");
+      Alert.alert("Success", "Manual booking created successfully.");
       closeRoomModal();
       await loadData();
     } catch (error) {
@@ -206,7 +356,7 @@ export default function AdminRoomScreen() {
   };
 
   const handleOccupyBookedRoom = async () => {
-    if (!selectedRoom?.booking || isProcessing) return;
+    if (!selectedBooking || isProcessing) return;
 
     if (!guestName.trim()) {
       Alert.alert("Missing Guest Name", "Please enter the guest name.");
@@ -216,7 +366,7 @@ export default function AdminRoomScreen() {
     try {
       setProcessingAction("occupy");
 
-      await updateDoc(doc(db, "roomBookings", selectedRoom.booking.id), {
+      await updateDoc(doc(db, "roomBookings", selectedBooking.id), {
         status: "checked-in",
         guestName: guestName.trim(),
         guestPhone: guestPhone.trim() || "",
@@ -252,6 +402,7 @@ export default function AdminRoomScreen() {
         userFullName: guestName.trim(),
         userPhone: guestPhone.trim() || "",
         roomId: selectedRoom.id,
+        roomName: selectedRoom.name,
         name: selectedRoom.name,
         price: selectedRoom.price,
         image: selectedRoom.image,
@@ -262,6 +413,8 @@ export default function AdminRoomScreen() {
         status: "checked-in",
         reservedAt: serverTimestamp(),
         checkInAt: serverTimestamp(),
+        createdAt: serverTimestamp(),
+        updatedAt: serverTimestamp(),
       });
 
       Alert.alert("Success", "Room is now occupied.");
@@ -276,7 +429,7 @@ export default function AdminRoomScreen() {
   };
 
   const handleCancelBookedRoom = async () => {
-    if (!selectedRoom?.booking || isProcessing) return;
+    if (!selectedBooking || isProcessing) return;
 
     Alert.alert("Cancel Booking", "Do you want to cancel this booking?", [
       { text: "No", style: "cancel" },
@@ -288,7 +441,7 @@ export default function AdminRoomScreen() {
             setProcessingAction("cancel");
 
             await releaseBookingLocksAndUpdateStatus({
-              bookingId: selectedRoom.booking.id,
+              bookingId: selectedBooking.id,
               newStatus: "cancelled",
               actorId: auth.currentUser?.uid || "admin",
               requireOwner: false,
@@ -313,7 +466,7 @@ export default function AdminRoomScreen() {
   };
 
   const handleCheckoutOccupiedRoom = async () => {
-    if (!selectedRoom?.booking || isProcessing) return;
+    if (!selectedBooking || isProcessing) return;
 
     Alert.alert("Check Out", "Mark this room as checked out?", [
       { text: "No", style: "cancel" },
@@ -325,7 +478,7 @@ export default function AdminRoomScreen() {
             setProcessingAction("checkout");
 
             await releaseBookingLocksAndUpdateStatus({
-              bookingId: selectedRoom.booking.id,
+              bookingId: selectedBooking.id,
               newStatus: "checked-out",
               actorId: auth.currentUser?.uid || "admin",
               requireOwner: false,
@@ -381,52 +534,582 @@ export default function AdminRoomScreen() {
     return "Extra beds and pillows";
   };
 
-  const renderRoomCard = (room, statusLabel, subtitle) => (
-    <TouchableOpacity
-      key={room.id}
-      style={styles.card}
-      activeOpacity={0.9}
-      onPress={() => openRoomModal(room)}
-    >
-      <Image source={{ uri: room.image }} style={styles.cardImage} />
+  const renderRoomOverviewCard = (room) => {
+    const occupied = !!room.occupiedBooking;
+    const reservationCount = room.reservedBookings.length;
+    const nextReservation = room.reservedBookings[0] || null;
 
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{room.name}</Text>
-        <Text style={styles.cardSubtitle}>{room.price || ""}</Text>
-        <Text style={styles.cardStatus}>{statusLabel}</Text>
-        {!!subtitle && <Text style={styles.metaText}>{subtitle}</Text>}
+    return (
+      <View key={room.id} style={styles.card}>
+        <TouchableOpacity
+          style={styles.roomCardMain}
+          activeOpacity={0.88}
+          onPress={() => openRoomModal(room)}
+        >
+          <Image source={{ uri: room.image }} style={styles.cardImage} />
+
+          <View style={styles.cardContent}>
+            <View style={styles.cardTitleRow}>
+              <Text style={styles.cardTitle}>{room.name}</Text>
+
+              <View
+                style={[
+                  styles.statusBadge,
+                  occupied
+                    ? styles.statusBadgeOccupied
+                    : styles.statusBadgeAvailable,
+                ]}
+              >
+                <Text
+                  style={[
+                    styles.statusBadgeText,
+                    occupied
+                      ? styles.statusBadgeTextOccupied
+                      : styles.statusBadgeTextAvailable,
+                  ]}
+                >
+                  {occupied ? "Occupied" : "Available now"}
+                </Text>
+              </View>
+            </View>
+
+            <Text style={styles.cardSubtitle}>{room.price || "No price"}</Text>
+
+            {occupied ? (
+              <Text style={styles.metaText}>
+                Guest: {getGuestName(room.occupiedBooking)}
+              </Text>
+            ) : (
+              <Text style={styles.manageHint}>
+                Tap room details for manual guest entry
+              </Text>
+            )}
+          </View>
+
+          <Ionicons name="chevron-forward" size={20} color="#9b8b7e" />
+        </TouchableOpacity>
+
+        {reservationCount > 0 ? (
+          <TouchableOpacity
+            style={styles.reservationSummaryButton}
+            activeOpacity={0.82}
+            onPress={() => openReservationsModal(room)}
+          >
+            <View style={styles.reservationSummaryIcon}>
+              <Ionicons name="calendar-outline" size={18} color="#6b3200" />
+            </View>
+
+            <View style={{ flex: 1 }}>
+              <Text style={styles.reservationSummaryTitle}>
+                {reservationCount} booked reservation
+                {reservationCount > 1 ? "s" : ""}
+              </Text>
+
+              {nextReservation ? (
+                <Text style={styles.reservationSummaryText} numberOfLines={2}>
+                  Next: {formatBookingRange(nextReservation)} • {getGuestName(nextReservation)}
+                </Text>
+              ) : null}
+            </View>
+
+            <Ionicons name="chevron-forward" size={18} color="#9b8b7e" />
+          </TouchableOpacity>
+        ) : (
+          <View style={styles.noReservationBox}>
+            <Ionicons name="calendar-clear-outline" size={17} color="#9b8b7e" />
+            <Text style={styles.noReservationText}>No booked reservations</Text>
+          </View>
+        )}
       </View>
-    </TouchableOpacity>
-  );
+    );
+  };
 
-  const renderBookingCard = (booking, statusLabel, subtitle) => (
-    <TouchableOpacity
-      key={booking.id}
-      style={styles.card}
-      activeOpacity={0.9}
-      onPress={() =>
-        openRoomModal({
-          id: booking.roomId,
-          name: booking.name,
-          price: booking.price,
-          image: booking.image,
-          amenities: booking.amenities || [],
-          roomNumber: booking.roomNumber || "",
-        })
-      }
-    >
-      <Image source={{ uri: booking.image }} style={styles.cardImage} />
+  const renderReservationRow = (booking) => {
+    const isOccupied = booking.status === "checked-in";
 
-      <View style={styles.cardContent}>
-        <Text style={styles.cardTitle}>{booking.name || booking.roomName}</Text>
-        <Text style={styles.cardSubtitle}>
-          {booking.roomNumber || booking.checkInDate || ""}
+    return (
+      <TouchableOpacity
+        key={booking.id}
+        style={styles.reservationRow}
+        activeOpacity={0.85}
+        onPress={() => openBookingDetails(booking)}
+      >
+        <View style={{ flex: 1 }}>
+          <Text style={styles.reservationGuest}>{getGuestName(booking)}</Text>
+          <Text style={styles.reservationDates}>{formatBookingRange(booking)}</Text>
+          {!!booking.checkInTime && (
+            <Text style={styles.reservationTime}>
+              Check-in time: {booking.checkInTime}
+            </Text>
+          )}
+        </View>
+
+        <View style={styles.reservationRightBox}>
+          <Text
+            style={[
+              styles.reservationStatus,
+              isOccupied && styles.reservationStatusOccupied,
+            ]}
+          >
+            {isOccupied ? "Occupied" : "Booked"}
+          </Text>
+          <Ionicons name="chevron-forward" size={18} color="#9b8b7e" />
+        </View>
+      </TouchableOpacity>
+    );
+  };
+
+  const renderReservationDirectory = () => {
+    if (!selectedRoom) return null;
+
+    const today = getLocalDateString();
+    const yesterday = getYesterdayString();
+    const isCustomDate =
+      reservationDateFilter !== "all" &&
+      reservationDateFilter !== today &&
+      reservationDateFilter !== yesterday;
+
+    const renderFilterButton = (label, value, iconName) => {
+      const active = reservationDateFilter === value;
+
+      return (
+        <TouchableOpacity
+          key={value}
+          style={[styles.filterChip, active && styles.filterChipActive]}
+          onPress={() => setReservationDateFilter(value)}
+          activeOpacity={0.8}
+        >
+          {iconName ? (
+            <Ionicons
+              name={iconName}
+              size={15}
+              color={active ? "#fff" : "#6b3200"}
+            />
+          ) : null}
+          <Text
+            style={[
+              styles.filterChipText,
+              active && styles.filterChipTextActive,
+            ]}
+          >
+            {label}
+          </Text>
+        </TouchableOpacity>
+      );
+    };
+
+    return (
+      <>
+        <View style={styles.directoryHeader}>
+          <View>
+            <Text style={styles.directoryTitle}>Booked Reservations</Text>
+            <Text style={styles.directorySubtitle}>
+              Search a guest or filter reservations by occupied date.
+            </Text>
+          </View>
+
+          <View style={styles.directoryCountBadge}>
+            <Text style={styles.directoryCountText}>
+              {selectedRoom.reservedBookings.length}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.searchBox}>
+          <Ionicons name="search-outline" size={20} color="#8b7e74" />
+          <TextInput
+            style={styles.searchInput}
+            value={reservationSearch}
+            onChangeText={setReservationSearch}
+            placeholder="Search guest name..."
+            placeholderTextColor="#9b8b7e"
+            autoCapitalize="words"
+          />
+          {!!reservationSearch && (
+            <TouchableOpacity onPress={() => setReservationSearch("")}>
+              <Ionicons name="close-circle" size={20} color="#9b8b7e" />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          contentContainerStyle={styles.filterRow}
+        >
+          {renderFilterButton("All", "all", "list-outline")}
+          {renderFilterButton("Today", today, "today-outline")}
+          {renderFilterButton("Yesterday", yesterday, "time-outline")}
+
+          <TouchableOpacity
+            style={[styles.filterChip, isCustomDate && styles.filterChipActive]}
+            onPress={() => setCalendarVisible(true)}
+            activeOpacity={0.8}
+          >
+            <Ionicons
+              name="calendar-outline"
+              size={15}
+              color={isCustomDate ? "#fff" : "#6b3200"}
+            />
+            <Text
+              style={[
+                styles.filterChipText,
+                isCustomDate && styles.filterChipTextActive,
+              ]}
+            >
+              {isCustomDate
+                ? formatDateOnly(reservationDateFilter)
+                : "Choose date"}
+            </Text>
+          </TouchableOpacity>
+        </ScrollView>
+
+        {reservationDateFilter !== "all" ? (
+          <View style={styles.activeDateFilterBox}>
+            <Ionicons name="filter-outline" size={16} color="#6b3200" />
+            <Text style={styles.activeDateFilterText}>
+              Showing stays active on {formatDateOnly(reservationDateFilter)}
+            </Text>
+            <TouchableOpacity onPress={() => setReservationDateFilter("all")}>
+              <Text style={styles.clearFilterText}>Clear</Text>
+            </TouchableOpacity>
+          </View>
+        ) : null}
+
+        <Text style={styles.resultsLabel}>
+          {filteredReservations.length} result
+          {filteredReservations.length === 1 ? "" : "s"}
         </Text>
-        <Text style={styles.cardStatus}>{statusLabel}</Text>
-        {!!subtitle && <Text style={styles.metaText}>{subtitle}</Text>}
-      </View>
-    </TouchableOpacity>
-  );
+
+        {filteredReservations.length === 0 ? (
+          <View style={styles.emptyReservationBox}>
+            <Ionicons name="search-outline" size={28} color="#9b8b7e" />
+            <Text style={styles.emptyReservationTitle}>
+              No matching reservations
+            </Text>
+            <Text style={styles.emptyReservationText}>
+              Try another guest name or remove the selected date filter.
+            </Text>
+          </View>
+        ) : (
+          filteredReservations.map(renderReservationRow)
+        )}
+      </>
+    );
+  };
+
+  const renderRoomManagement = () => {
+    if (!selectedRoom) return null;
+
+    return (
+      <>
+        <Image source={{ uri: selectedRoom.image }} style={styles.modalImage} />
+
+        <Text style={styles.priceText}>
+          {selectedRoom.price || "No price"}
+        </Text>
+
+        <View style={styles.roomStateCard}>
+          <View>
+            <Text style={styles.roomStateLabel}>Current status</Text>
+            <Text style={styles.roomStateValue}>
+              {selectedRoom.occupiedBooking ? "Occupied" : "Available now"}
+            </Text>
+          </View>
+
+          {selectedRoom.reservedBookings.length > 0 ? (
+            <TouchableOpacity
+              style={styles.viewReservationsPill}
+              onPress={() => {
+                setRoomModalMode("reservations");
+                setSelectedBooking(null);
+                setReservationSearch("");
+                setReservationDateFilter("all");
+              }}
+            >
+              <Ionicons name="calendar-outline" size={15} color="#6b3200" />
+              <Text style={styles.viewReservationsPillText}>
+                {selectedRoom.reservedBookings.length} booked
+              </Text>
+            </TouchableOpacity>
+          ) : (
+            <Text style={styles.roomStateCount}>No bookings</Text>
+          )}
+        </View>
+
+        <Text style={styles.sectionSmallTitle}>Amenities</Text>
+        <View style={styles.amenitiesBox}>
+          {(selectedRoom.amenities || []).length === 0 ? (
+            <Text style={styles.metaText}>No amenities listed.</Text>
+          ) : (
+            selectedRoom.amenities.map((item, index) => (
+              <View key={`${item}-${index}`} style={styles.amenityRow}>
+                {renderAmenityIcon(item)}
+                <Text style={styles.amenityText}>
+                  {renderAmenityLabel(item)}
+                </Text>
+              </View>
+            ))
+          )}
+        </View>
+
+        {selectedRoom.occupiedBooking ? (
+          <>
+            <Text style={styles.sectionSmallTitle}>Current Occupancy</Text>
+            {renderReservationRow(selectedRoom.occupiedBooking)}
+          </>
+        ) : (
+          <View style={styles.manualActionBox}>
+            <Text style={styles.sectionSmallTitle}>Manual Guest Entry</Text>
+            <Text style={styles.manualActionHint}>
+              Use this for a walk-in guest or a manually recorded reservation.
+            </Text>
+
+            <Text style={styles.inputLabel}>Guest Name</Text>
+            <TextInput
+              style={styles.input}
+              value={guestName}
+              onChangeText={setGuestName}
+              placeholder="Enter guest name"
+              editable={!isProcessing}
+            />
+
+            <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={guestPhone}
+              onChangeText={setGuestPhone}
+              placeholder="Enter phone number optional"
+              keyboardType="phone-pad"
+              editable={!isProcessing}
+            />
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                isProcessing && styles.disabledButton,
+              ]}
+              onPress={handleOccupyAvailableRoom}
+              disabled={isProcessing}
+            >
+              <Text style={styles.actionButtonText}>
+                {isOccupying ? "Processing..." : "Occupy Now"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.secondaryButton,
+                isProcessing && styles.disabledButton,
+              ]}
+              onPress={handleBookRoom}
+              disabled={isProcessing}
+            >
+              <Text style={styles.actionButtonText}>
+                {isBooking ? "Processing..." : "Create Manual Booking"}
+              </Text>
+            </TouchableOpacity>
+          </View>
+        )}
+      </>
+    );
+  };
+
+  const renderBookingDetails = () => {
+    if (!selectedBooking) return null;
+
+    const isOccupied = selectedBooking.status === "checked-in";
+
+    return (
+      <>
+        <TouchableOpacity
+          style={styles.backToRoomButton}
+          onPress={closeBookingDetails}
+          disabled={isProcessing}
+        >
+          <Ionicons name="arrow-back" size={18} color="#6b3200" />
+          <Text style={styles.backToRoomText}>
+            {roomModalMode === "reservations"
+              ? "Back to reservations"
+              : "Back to room management"}
+          </Text>
+        </TouchableOpacity>
+
+        <View style={styles.selectedBookingHeader}>
+          <Text style={styles.sectionSmallTitle}>
+            {isOccupied ? "Current Occupancy" : "Reservation Details"}
+          </Text>
+          <View
+            style={[
+              styles.statusBadge,
+              isOccupied ? styles.statusBadgeOccupied : styles.statusBadgeBooked,
+            ]}
+          >
+            <Text
+              style={[
+                styles.statusBadgeText,
+                isOccupied
+                  ? styles.statusBadgeTextOccupied
+                  : styles.statusBadgeTextBooked,
+              ]}
+            >
+              {isOccupied ? "Occupied" : "Booked"}
+            </Text>
+          </View>
+        </View>
+
+        <View style={styles.infoBox}>
+          <Text style={styles.infoLabel}>
+            Guest Name:{" "}
+            <Text style={styles.infoValue}>{getGuestName(selectedBooking)}</Text>
+          </Text>
+
+          <Text style={styles.infoLabel}>
+            Phone:{" "}
+            <Text style={styles.infoValue}>
+              {selectedBooking.guestPhone || selectedBooking.userPhone || "Not set"}
+            </Text>
+          </Text>
+
+          <Text style={styles.infoLabel}>
+            Email:{" "}
+            <Text style={styles.infoValue}>
+              {selectedBooking.userEmail || "Not set"}
+            </Text>
+          </Text>
+
+          <Text style={styles.infoLabel}>
+            Stay:{" "}
+            <Text style={styles.infoValue}>{formatBookingRange(selectedBooking)}</Text>
+          </Text>
+
+          {!!selectedBooking.checkInTime && (
+            <Text style={styles.infoLabel}>
+              Planned Check-in Time:{" "}
+              <Text style={styles.infoValue}>{selectedBooking.checkInTime}</Text>
+            </Text>
+          )}
+
+          <Text style={styles.infoLabel}>
+            Stay Duration:{" "}
+            <Text style={styles.infoValue}>
+              {selectedBooking.stayNights || 1} night(s)
+            </Text>
+          </Text>
+
+          {isOccupied && (
+            <Text style={styles.infoLabel}>
+              Checked In At:{" "}
+              <Text style={styles.infoValue}>
+                {formatDateTime(selectedBooking.checkInAt)}
+              </Text>
+            </Text>
+          )}
+
+          <Text style={styles.infoLabel}>
+            Date Booked:{" "}
+            <Text style={styles.infoValue}>
+              {formatDateTime(selectedBooking.reservedAt || selectedBooking.createdAt)}
+            </Text>
+          </Text>
+
+          <Text style={styles.infoLabel}>
+            Guests:{" "}
+            <Text style={styles.infoValue}>
+              {formatGuests(selectedBooking.guests)}
+            </Text>
+          </Text>
+
+          <Text style={styles.infoLabel}>
+            Add-ons:{"\n"}
+            <Text style={styles.infoValue}>
+              {formatAddOns(selectedBooking.addOns)}
+            </Text>
+          </Text>
+
+          {!!selectedBooking.specialRequest && (
+            <Text style={styles.infoLabel}>
+              Special Request:{" "}
+              <Text style={styles.infoValue}>
+                {selectedBooking.specialRequest}
+              </Text>
+            </Text>
+          )}
+
+          <Text style={styles.infoLabel}>
+            Total Amount:{" "}
+            <Text style={styles.infoValue}>
+              ₱{getTotalAmount(selectedBooking)}
+            </Text>
+          </Text>
+        </View>
+
+        {!isOccupied && (
+          <>
+            <Text style={styles.inputLabel}>Guest Name</Text>
+            <TextInput
+              style={styles.input}
+              value={guestName}
+              onChangeText={setGuestName}
+              placeholder="Enter guest name"
+              editable={!isProcessing}
+            />
+
+            <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
+            <TextInput
+              style={styles.input}
+              value={guestPhone}
+              onChangeText={setGuestPhone}
+              placeholder="Enter phone number optional"
+              keyboardType="phone-pad"
+              editable={!isProcessing}
+            />
+
+            <TouchableOpacity
+              style={[styles.actionButton, isProcessing && styles.disabledButton]}
+              onPress={handleOccupyBookedRoom}
+              disabled={isProcessing}
+            >
+              <Text style={styles.actionButtonText}>
+                {isOccupying ? "Processing..." : "Check In Guest"}
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[
+                styles.actionButton,
+                styles.cancelButton,
+                isProcessing && styles.disabledButton,
+              ]}
+              onPress={handleCancelBookedRoom}
+              disabled={isProcessing}
+            >
+              <Text style={styles.actionButtonText}>
+                {isCancelling ? "Cancelling..." : "Cancel Reservation"}
+              </Text>
+            </TouchableOpacity>
+          </>
+        )}
+
+        {isOccupied && (
+          <TouchableOpacity
+            style={[
+              styles.actionButton,
+              styles.checkoutButton,
+              isProcessing && styles.disabledButton,
+            ]}
+            onPress={handleCheckoutOccupiedRoom}
+            disabled={isProcessing}
+          >
+            <Text style={styles.actionButtonText}>
+              {isCheckingOut ? "Processing..." : "Check Out Guest"}
+            </Text>
+          </TouchableOpacity>
+        )}
+      </>
+    );
+  };
 
   if (loading) {
     return (
@@ -443,39 +1126,15 @@ export default function AdminRoomScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.sectionTitle}>Available Rooms</Text>
-        {availableRooms.length === 0 ? (
-          <Text style={styles.emptyText}>No available rooms.</Text>
-        ) : (
-          availableRooms.map((room) =>
-            renderRoomCard(room, "Available", "")
-          )
-        )}
+        <Text style={styles.pageTitle}>Room Overview</Text>
+        <Text style={styles.pageSubtitle}>
+          Tap a room for manual management, or tap its booked reservations to browse and search stays.
+        </Text>
 
-        <Text style={styles.sectionTitle}>Booked Rooms</Text>
-        {bookedRooms.length === 0 ? (
-          <Text style={styles.emptyText}>No booked rooms.</Text>
+        {roomOverview.length === 0 ? (
+          <Text style={styles.emptyText}>No rooms found.</Text>
         ) : (
-          bookedRooms.map((booking) =>
-            renderBookingCard(
-              booking,
-              "Booked",
-              `booked by: ${booking.guestName || booking.userEmail || "Unknown"}`
-            )
-          )
-        )}
-
-        <Text style={styles.sectionTitle}>Occupied Rooms</Text>
-        {occupiedRooms.length === 0 ? (
-          <Text style={styles.emptyText}>No occupied rooms.</Text>
-        ) : (
-          occupiedRooms.map((booking) =>
-            renderBookingCard(
-              booking,
-              "Occupied",
-              `occupied by: ${booking.guestName || booking.userEmail || "Unknown"}`
-            )
-          )
+          roomOverview.map(renderRoomOverviewCard)
         )}
       </ScrollView>
 
@@ -489,310 +1148,96 @@ export default function AdminRoomScreen() {
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedRoom?.name}</Text>
-              <TouchableOpacity onPress={closeRoomModal}>
+              <TouchableOpacity onPress={closeRoomModal} disabled={isProcessing}>
                 <Ionicons name="close" size={24} color="#333" />
               </TouchableOpacity>
             </View>
 
             {selectedRoom && (
-              <ScrollView showsVerticalScrollIndicator={false}>
-                <Image
-                  source={{ uri: selectedRoom.image }}
-                  style={styles.modalImage}
-                />
-
-                <Text style={styles.priceText}>
-                  {selectedRoom.price || "No price"}
-                </Text>
-
-                <Text style={styles.sectionSmallTitle}>Amenities</Text>
-                <View style={styles.amenitiesBox}>
-                  {(selectedRoom.amenities || []).length === 0 ? (
-                    <Text style={styles.metaText}>No amenities listed.</Text>
-                  ) : (
-                    selectedRoom.amenities.map((item, index) => (
-                      <View key={`${item}-${index}`} style={styles.amenityRow}>
-                        {renderAmenityIcon(item)}
-                        <Text style={styles.amenityText}>
-                          {renderAmenityLabel(item)}
-                        </Text>
-                      </View>
-                    ))
-                  )}
-                </View>
-
-                {selectedRoom.roomStatus === "available" && (
-                  <>
-                    <Text style={styles.sectionSmallTitle}>Guest Details</Text>
-
-                    <Text style={styles.inputLabel}>Guest Name</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={guestName}
-                      onChangeText={setGuestName}
-                      placeholder="Enter guest name"
-                    />
-
-                    <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={guestPhone}
-                      onChangeText={setGuestPhone}
-                      placeholder="Enter phone number optional"
-                      keyboardType="phone-pad"
-                    />
-
-                    <TouchableOpacity
-                      style={[styles.actionButton, isProcessing && styles.disabledButton]}
-                      onPress={handleBookRoom}
-                      disabled={isProcessing}
-                    >
-                      <Text style={styles.actionButtonText}>
-                        {isBooking ? "Processing..." : "Book"}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.actionButton,
-                        styles.secondaryButton,
-                        isProcessing && styles.disabledButton,
-                      ]}
-                      onPress={handleOccupyAvailableRoom}
-                      disabled={isProcessing}
-                    >
-                      <Text style={styles.actionButtonText}>{isOccupying ? "Processing..." : "Occupy"}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                {selectedRoom.roomStatus === "booked" && (
-                  <>
-                    <Text style={styles.sectionSmallTitle}>Booking Details</Text>
-
-                    <View style={styles.infoBox}>
-                      <Text style={styles.infoLabel}>
-                        Guest Name:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.guestName ||
-                            selectedRoom.booking?.userFullName ||
-                            "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Phone:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.guestPhone || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Email:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.userEmail || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Date of Booking:{" "}
-                        <Text style={styles.infoValue}>
-                          {formatDateTime(
-                            selectedRoom.booking?.reservedAt ||
-                              selectedRoom.booking?.createdAt
-                          )}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Check-in Schedule:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.checkInDate || "Not set"}{" "}
-                          {selectedRoom.booking?.checkInTime || ""}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Check-out Date:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.checkOutDate || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Stay Duration:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.stayNights || 1} night(s)
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Guests:{" "}
-                        <Text style={styles.infoValue}>
-                          {formatGuests(selectedRoom.booking?.guests)}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Add-ons:{"\n"}
-                        <Text style={styles.infoValue}>
-                          {formatAddOns(selectedRoom.booking?.addOns)}
-                        </Text>
-                      </Text>
-
-                      {!!selectedRoom.booking?.specialRequest && (
-                        <Text style={styles.infoLabel}>
-                          Special Request:{" "}
-                          <Text style={styles.infoValue}>
-                            {selectedRoom.booking.specialRequest}
-                          </Text>
-                        </Text>
-                      )}
-
-                      <Text style={styles.infoLabel}>
-                        Total Amount:{" "}
-                        <Text style={styles.infoValue}>
-                          ₱{getTotalAmount(selectedRoom.booking)}
-                        </Text>
-                      </Text>
-                    </View>
-
-                    <Text style={styles.inputLabel}>Guest Name</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={guestName}
-                      onChangeText={setGuestName}
-                      placeholder="Enter guest name"
-                    />
-
-                    <Text style={styles.inputLabel}>Phone Number (Optional)</Text>
-                    <TextInput
-                      style={styles.input}
-                      value={guestPhone}
-                      onChangeText={setGuestPhone}
-                      placeholder="Enter phone number optional"
-                      keyboardType="phone-pad"
-                    />
-
-                    <TouchableOpacity
-                      style={[styles.actionButton, isProcessing && styles.disabledButton]}
-                      onPress={handleOccupyBookedRoom}
-                      disabled={isProcessing}
-                    >
-                      <Text style={styles.actionButtonText}>
-                        {isOccupying ? "Processing..." : "Occupy"}
-                      </Text>
-                    </TouchableOpacity>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.actionButton,
-                        styles.cancelButton,
-                        isProcessing && styles.disabledButton,
-                      ]}
-                      onPress={handleCancelBookedRoom}
-                      disabled={isProcessing}
-                    >
-                      <Text style={styles.actionButtonText}>{isCancelling ? "Cancelling..." : "Cancel"}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
-
-                {selectedRoom.roomStatus === "checked-in" && (
-                  <>
-                    <Text style={styles.sectionSmallTitle}>Occupancy Details</Text>
-
-                    <View style={styles.infoBox}>
-                      <Text style={styles.infoLabel}>
-                        Occupied At:{" "}
-                        <Text style={styles.infoValue}>
-                          {formatDateTime(selectedRoom.booking?.checkInAt)}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Date of Booking:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.reservedAt
-                            ? formatDateTime(selectedRoom.booking?.reservedAt)
-                            : "Not booked first"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Guest Name:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.guestName ||
-                            selectedRoom.booking?.userFullName ||
-                            "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Email:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.userEmail || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Phone:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.guestPhone || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Original Check-in Schedule:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.checkInDate || "Not set"}{" "}
-                          {selectedRoom.booking?.checkInTime || ""}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Expected Check-out:{" "}
-                        <Text style={styles.infoValue}>
-                          {selectedRoom.booking?.checkOutDate || "Not set"}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Guests:{" "}
-                        <Text style={styles.infoValue}>
-                          {formatGuests(selectedRoom.booking?.guests)}
-                        </Text>
-                      </Text>
-
-                      <Text style={styles.infoLabel}>
-                        Total Amount:{" "}
-                        <Text style={styles.infoValue}>
-                          ₱{getTotalAmount(selectedRoom.booking)}
-                        </Text>
-                      </Text>
-                    </View>
-
-                    <TouchableOpacity
-                      style={[
-                        styles.actionButton,
-                        styles.checkoutButton,
-                        isProcessing && styles.disabledButton,
-                      ]}
-                      onPress={handleCheckoutOccupiedRoom}
-                      disabled={isProcessing}
-                    >
-                      <Text style={styles.actionButtonText}>{isCheckingOut ? "Processing..." : "Check Out"}</Text>
-                    </TouchableOpacity>
-                  </>
-                )}
+              <ScrollView
+                showsVerticalScrollIndicator={false}
+                keyboardShouldPersistTaps="handled"
+              >
+                {selectedBooking
+                  ? renderBookingDetails()
+                  : roomModalMode === "reservations"
+                  ? renderReservationDirectory()
+                  : renderRoomManagement()}
               </ScrollView>
             )}
+          </View>
+        </View>
+      </Modal>
+
+      <Modal
+        visible={calendarVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCalendarVisible(false)}
+      >
+        <View style={styles.calendarOverlay}>
+          <View style={styles.calendarCard}>
+            <View style={styles.calendarHeader}>
+              <View>
+                <Text style={styles.calendarTitle}>Filter by date</Text>
+                <Text style={styles.calendarSubtitle}>
+                  Select a date to show reservations active that night.
+                </Text>
+              </View>
+
+              <TouchableOpacity onPress={() => setCalendarVisible(false)}>
+                <Ionicons name="close" size={24} color="#333" />
+              </TouchableOpacity>
+            </View>
+
+            <Calendar
+              current={
+                reservationDateFilter === "all"
+                  ? getLocalDateString()
+                  : reservationDateFilter
+              }
+              onDayPress={(day) => {
+                setReservationDateFilter(day.dateString);
+                setCalendarVisible(false);
+              }}
+              markedDates={
+                reservationDateFilter === "all"
+                  ? {}
+                  : {
+                      [reservationDateFilter]: {
+                        selected: true,
+                        selectedColor: "#6b3200",
+                        selectedTextColor: "#fff",
+                      },
+                    }
+              }
+              enableSwipeMonths
+              theme={{
+                todayTextColor: "#6b3200",
+                arrowColor: "#6b3200",
+                monthTextColor: "#2f241d",
+                textMonthFontWeight: "800",
+                textDayFontWeight: "500",
+                textDayHeaderFontWeight: "700",
+              }}
+            />
+
+            <TouchableOpacity
+              style={styles.clearDateButton}
+              onPress={() => {
+                setReservationDateFilter("all");
+                setCalendarVisible(false);
+              }}
+            >
+              <Text style={styles.clearDateButtonText}>Show all dates</Text>
+            </TouchableOpacity>
           </View>
         </View>
       </Modal>
     </View>
   );
 }
+
 const CREAM = "#FFF8E7";
 
 const styles = StyleSheet.create({
@@ -804,57 +1249,148 @@ const styles = StyleSheet.create({
     padding: 16,
     paddingBottom: 40,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#5b3212",
-    marginTop: 18,
-    marginBottom: 10,
+  pageTitle: {
+    fontSize: 23,
+    fontWeight: "800",
+    color: "#4b2a12",
+    marginTop: 8,
+  },
+  pageSubtitle: {
+    color: "#7a6d63",
+    fontSize: 13,
+    lineHeight: 19,
+    marginTop: 4,
+    marginBottom: 16,
   },
   sectionSmallTitle: {
     fontSize: 16,
     fontWeight: "700",
     color: "#4b2a12",
     marginBottom: 10,
-    marginTop: 10,
+    marginTop: 14,
   },
   card: {
-    flexDirection: "row",
     backgroundColor: "#fff",
-    borderRadius: 14,
-    padding: 10,
+    borderRadius: 16,
     marginBottom: 12,
+    overflow: "hidden",
     elevation: 2,
+    shadowColor: "#000",
+    shadowOpacity: 0.06,
+    shadowRadius: 5,
+    shadowOffset: { width: 0, height: 2 },
+  },
+  roomCardMain: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 12,
   },
   cardImage: {
-    width: 72,
-    height: 72,
-    borderRadius: 10,
+    width: 78,
+    height: 78,
+    borderRadius: 12,
     marginRight: 12,
+    backgroundColor: "#eee3db",
   },
   cardContent: {
     flex: 1,
+    marginRight: 8,
+  },
+  cardTitleRow: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    gap: 8,
   },
   cardTitle: {
-    fontSize: 16,
+    flex: 1,
+    fontSize: 17,
     fontWeight: "700",
     color: "#2f241d",
   },
   cardSubtitle: {
-    fontSize: 12,
-    color: "#7c6c60",
-    marginTop: 2,
-  },
-  cardStatus: {
     fontSize: 13,
-    fontWeight: "700",
-    color: "#8b5e34",
-    marginTop: 6,
+    color: "#7c6c60",
+    marginTop: 3,
+  },
+  statusBadge: {
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  statusBadgeAvailable: {
+    backgroundColor: "#e8f7ee",
+  },
+  statusBadgeOccupied: {
+    backgroundColor: "#fdecec",
+  },
+  statusBadgeBooked: {
+    backgroundColor: "#fff2df",
+  },
+  statusBadgeText: {
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  statusBadgeTextAvailable: {
+    color: "#227447",
+  },
+  statusBadgeTextOccupied: {
+    color: "#a93636",
+  },
+  statusBadgeTextBooked: {
+    color: "#9a5b16",
   },
   metaText: {
     fontSize: 12,
     color: "#5e554d",
-    marginTop: 2,
+    marginTop: 5,
+  },
+  manageHint: {
+    color: "#8a7d73",
+    fontSize: 11,
+    marginTop: 7,
+  },
+  reservationSummaryButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#faf5ef",
+    borderTopWidth: 1,
+    borderTopColor: "#eee3db",
+    paddingHorizontal: 12,
+    paddingVertical: 11,
+  },
+  reservationSummaryIcon: {
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "#f2e5d8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginRight: 9,
+  },
+  reservationSummaryTitle: {
+    color: "#6b3200",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  reservationSummaryText: {
+    color: "#6b5a4a",
+    fontSize: 11,
+    lineHeight: 16,
+    marginTop: 3,
+  },
+  noReservationBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderTopWidth: 1,
+    borderTopColor: "#f1ebe5",
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+  },
+  noReservationText: {
+    color: "#8a7d73",
+    fontSize: 12,
+    marginLeft: 7,
   },
   loaderBox: {
     flex: 1,
@@ -876,10 +1412,10 @@ const styles = StyleSheet.create({
   },
   modalCard: {
     backgroundColor: "#fff",
-    borderTopLeftRadius: 20,
-    borderTopRightRadius: 20,
+    borderTopLeftRadius: 22,
+    borderTopRightRadius: 22,
     padding: 18,
-    maxHeight: "90%",
+    maxHeight: "92%",
   },
   modalHeader: {
     flexDirection: "row",
@@ -888,15 +1424,16 @@ const styles = StyleSheet.create({
     marginBottom: 14,
   },
   modalTitle: {
-    fontSize: 20,
+    fontSize: 21,
     fontWeight: "800",
     color: "#2f241d",
   },
   modalImage: {
     width: "100%",
-    height: 220,
+    height: 210,
     borderRadius: 14,
     marginBottom: 14,
+    backgroundColor: "#eee3db",
   },
   priceText: {
     fontSize: 22,
@@ -904,11 +1441,48 @@ const styles = StyleSheet.create({
     color: "#6b3200",
     marginBottom: 10,
   },
+  roomStateCard: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    backgroundColor: "#faf7f4",
+    borderRadius: 14,
+    padding: 14,
+  },
+  roomStateLabel: {
+    color: "#7a6d63",
+    fontSize: 12,
+  },
+  roomStateValue: {
+    color: "#2f241d",
+    fontSize: 17,
+    fontWeight: "800",
+    marginTop: 3,
+  },
+  roomStateCount: {
+    color: "#6b3200",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  viewReservationsPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#f2e5d8",
+    borderRadius: 999,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+  },
+  viewReservationsPillText: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 5,
+  },
   amenitiesBox: {
     backgroundColor: "#f7f2ed",
     borderRadius: 14,
     padding: 12,
-    marginBottom: 16,
+    marginBottom: 4,
   },
   amenityRow: {
     flexDirection: "row",
@@ -921,6 +1495,200 @@ const styles = StyleSheet.create({
     color: "#3d3128",
     fontWeight: "500",
   },
+  reservationRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#fffaf4",
+    borderWidth: 1,
+    borderColor: "#eadfd4",
+    borderRadius: 13,
+    padding: 12,
+    marginBottom: 9,
+  },
+  reservationGuest: {
+    fontSize: 14,
+    fontWeight: "800",
+    color: "#2f241d",
+  },
+  reservationDates: {
+    fontSize: 12,
+    color: "#6b5a4a",
+    marginTop: 4,
+    lineHeight: 17,
+  },
+  reservationTime: {
+    fontSize: 11,
+    color: "#8b7e74",
+    marginTop: 2,
+  },
+  reservationRightBox: {
+    alignItems: "flex-end",
+    marginLeft: 10,
+  },
+  reservationStatus: {
+    color: "#9a5b16",
+    fontSize: 11,
+    fontWeight: "800",
+    marginBottom: 5,
+  },
+  reservationStatusOccupied: {
+    color: "#a93636",
+  },
+  emptyReservationBox: {
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "#faf7f4",
+    borderRadius: 13,
+    padding: 20,
+  },
+  emptyReservationText: {
+    color: "#7a6d63",
+    fontSize: 13,
+    textAlign: "center",
+    marginTop: 7,
+  },
+  emptyReservationTitle: {
+    color: "#2f241d",
+    fontSize: 15,
+    fontWeight: "800",
+    marginTop: 9,
+  },
+  directoryHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 14,
+  },
+  directoryTitle: {
+    color: "#2f241d",
+    fontSize: 20,
+    fontWeight: "800",
+  },
+  directorySubtitle: {
+    color: "#7a6d63",
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 4,
+    maxWidth: 260,
+  },
+  directoryCountBadge: {
+    minWidth: 36,
+    height: 36,
+    borderRadius: 18,
+    backgroundColor: "#f2e5d8",
+    alignItems: "center",
+    justifyContent: "center",
+    marginLeft: 10,
+  },
+  directoryCountText: {
+    color: "#6b3200",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  searchBox: {
+    height: 48,
+    borderWidth: 1,
+    borderColor: "#ded5cc",
+    borderRadius: 13,
+    backgroundColor: "#fff",
+    flexDirection: "row",
+    alignItems: "center",
+    paddingHorizontal: 12,
+    marginBottom: 11,
+  },
+  searchInput: {
+    flex: 1,
+    height: "100%",
+    marginLeft: 9,
+    color: "#2f241d",
+    fontSize: 14,
+  },
+  filterRow: {
+    paddingRight: 12,
+    paddingBottom: 8,
+  },
+  filterChip: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#d9c7b7",
+    borderRadius: 999,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginRight: 8,
+    backgroundColor: "#fff",
+  },
+  filterChipActive: {
+    backgroundColor: "#6b3200",
+    borderColor: "#6b3200",
+  },
+  filterChipText: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "700",
+    marginLeft: 5,
+  },
+  filterChipTextActive: {
+    color: "#fff",
+  },
+  activeDateFilterBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#faf5ef",
+    borderRadius: 11,
+    paddingHorizontal: 11,
+    paddingVertical: 9,
+    marginBottom: 10,
+  },
+  activeDateFilterText: {
+    flex: 1,
+    color: "#6b5a4a",
+    fontSize: 11,
+    marginLeft: 7,
+  },
+  clearFilterText: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 8,
+  },
+  resultsLabel: {
+    color: "#7a6d63",
+    fontSize: 12,
+    fontWeight: "700",
+    marginBottom: 9,
+  },
+  manualActionBox: {
+    borderTopWidth: 1,
+    borderTopColor: "#eee3db",
+    marginTop: 20,
+    paddingTop: 4,
+    paddingBottom: 12,
+  },
+  manualActionHint: {
+    color: "#7a6d63",
+    fontSize: 12,
+    lineHeight: 18,
+    marginBottom: 8,
+  },
+  backToRoomButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    paddingVertical: 7,
+    marginBottom: 4,
+  },
+  backToRoomText: {
+    color: "#6b3200",
+    fontWeight: "700",
+    fontSize: 13,
+    marginLeft: 6,
+  },
+  selectedBookingHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+  },
   infoBox: {
     backgroundColor: "#faf7f4",
     borderRadius: 12,
@@ -931,6 +1699,7 @@ const styles = StyleSheet.create({
     fontSize: 13,
     color: "#4b3a2f",
     marginBottom: 8,
+    lineHeight: 19,
   },
   infoValue: {
     fontWeight: "700",
@@ -966,13 +1735,56 @@ const styles = StyleSheet.create({
     backgroundColor: "#b84040",
   },
   checkoutButton: {
-    backgroundColor: "#6d4e3a",
+    backgroundColor: "#2f7d4a",
   },
   actionButtonText: {
     color: "#fff",
-    fontWeight: "700",
+    fontWeight: "800",
+    fontSize: 15,
+  },
+  calendarOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.45)",
+    justifyContent: "center",
+    paddingHorizontal: 18,
+  },
+  calendarCard: {
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 16,
+  },
+  calendarHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    justifyContent: "space-between",
+    marginBottom: 10,
+  },
+  calendarTitle: {
+    color: "#2f241d",
+    fontSize: 19,
+    fontWeight: "800",
+  },
+  calendarSubtitle: {
+    color: "#7a6d63",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+    maxWidth: 260,
+  },
+  clearDateButton: {
+    borderWidth: 1,
+    borderColor: "#6b3200",
+    borderRadius: 12,
+    paddingVertical: 11,
+    alignItems: "center",
+    marginTop: 10,
+  },
+  clearDateButtonText: {
+    color: "#6b3200",
+    fontWeight: "800",
+    fontSize: 14,
   },
   disabledButton: {
-    opacity: 0.7,
+    opacity: 0.6,
   },
 });
