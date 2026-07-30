@@ -22,7 +22,6 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
-  onSnapshot,
 } from "firebase/firestore";
 import { auth, db } from "./FirebaseConfig";
 import { useFonts } from "expo-font";
@@ -30,7 +29,6 @@ import {
   createBookingWithNightLocks,
   releaseBookingLocksAndUpdateStatus,
 } from "./services/bookingLockService";
-import { updateActivityStatus } from "./services/bookingLockService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -38,13 +36,14 @@ import FoodMenuScreen from "./pages/FoodMenuScreen";
 import RequestScreen from "./pages/RequestScreen";
 import RegisterScreen from "./pages/RegisterScreen";
 import LoginScreen from "./pages/LoginScreen";
+import WelcomeScreen from "./pages/WelcomeScreen";
+import OrdersModal from "./pages/components/OrdersModal";
 import ReservedRoomsModal from "./AppComponent/ReservedRoomsModal";
+import RequestsModal from "./AppComponent/RequestsModal";
 import InfoModal from "./AppComponent/InfoModal";
-import ActivityStatusModal from "./AppComponent/ActivityStatusModal";
 
 import AdminRoomScreen from "./pages/admin/AdminRoomScreen";
 import AdminRequestScreen from "./pages/admin/AdminRequestScreen";
-import AdminFoodOrderScreen from "./pages/admin/AdminFoodOrderScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -52,8 +51,9 @@ function MainLayout({
   navigation,
   currentUser,
   userData,
-  onOpenStatus,
+  onOpenOrders,
   onOpenReservedRooms,
+  onOpenRequests,
   onOpenInfo,
   activeScreen,
   onChangeScreen,
@@ -77,7 +77,10 @@ function MainLayout({
   const handleLogout = async () => {
     try {
       await signOut(auth);
-      navigation.replace("Login");
+      navigation.reset({
+        index: 0,
+        routes: [{ name: "Welcome" }],
+      });
     } catch (error) {
       Alert.alert("Logout Failed", error.message);
     }
@@ -137,24 +140,26 @@ function MainLayout({
           </Text>
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => onChangeScreen("FoodMenu")}
-        >
-          <Ionicons
-            name="restaurant-outline"
-            size={23}
-            color={activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
-          />
-          <Text
-            style={[
-              styles.navText,
-              activeScreen === "FoodMenu" && styles.activeNavText,
-            ]}
+          <TouchableOpacity
+            style={[styles.navItem, isAdmin && styles.disabledNavItem]}
+            disabled={isAdmin}
+            onPress={() => onChangeScreen("FoodMenu")}
           >
-            Food
-          </Text>
-        </TouchableOpacity>
+            <Ionicons
+              name="restaurant-outline"
+              size={23}
+              color={isAdmin ? "rgba(255,255,255,0.45)" : activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
+            />
+            <Text
+              style={[
+                styles.navText,
+                activeScreen === "FoodMenu" && styles.activeNavText,
+                isAdmin && styles.disabledNavText,
+              ]}
+            >
+              Food
+            </Text>
+          </TouchableOpacity>
 
         <TouchableOpacity
           style={styles.navItem}
@@ -190,35 +195,59 @@ function MainLayout({
 
               <Text style={styles.sideMenuTitle}>Menu</Text>
 
-              {!isAdmin && (
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setMenuVisible(false);
-                    onOpenStatus();
-                  }}
-                >
-                  <Ionicons name="pulse-outline" size={22} color="#4b3a2f" />
-                  <Text style={styles.menuText}>Status</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onOpenOrders();
+                }}
+              >
+                <Ionicons
+                  name="receipt-outline"
+                  size={22}
+                  color={isAdmin ? "#9ca3af" : "#030303"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Orders
+                </Text>
+              </TouchableOpacity>
 
-              {!isAdmin && (
-                <TouchableOpacity
-                  style={styles.menuItem}
-                  onPress={() => {
-                    setMenuVisible(false);
-                    onOpenReservedRooms();
-                  }}
-                >
-                  <MaterialCommunityIcons
-                    name="bed-outline"
-                    size={22}
-                    color="#4b3a2f"
-                  />
-                  <Text style={styles.menuText}>Reserved Room</Text>
-                </TouchableOpacity>
-              )}
+              <TouchableOpacity
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onOpenReservedRooms();
+                }}
+              >
+                <MaterialCommunityIcons
+                  name="bed-outline"
+                  size={22}
+                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Reserved Room
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
+                disabled={isAdmin}
+                onPress={() => {
+                  setMenuVisible(false);
+                  onOpenRequests();
+                }}
+              >
+                <Feather
+                  name="file-text"
+                  size={20}
+                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
+                />
+                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
+                  Requests
+                </Text>
+              </TouchableOpacity>
 
               <TouchableOpacity
                 style={styles.menuItem}
@@ -252,8 +281,9 @@ function MainShell({
   currentUser,
   userData,
   onBookRoom,
-  onOpenStatus,
+  onOpenOrders,
   onOpenReservedRooms,
+  onOpenRequests,
   onOpenInfo,
   roomStatusRefreshKey,
 }) {
@@ -271,9 +301,6 @@ function MainShell({
       switch (activeScreen) {
         case "Request":
           return <AdminRequestScreen />;
-
-        case "FoodMenu":
-          return <AdminFoodOrderScreen />;
 
         case "Rooms":
         default:
@@ -309,8 +336,9 @@ function MainShell({
       navigation={navigation}
       currentUser={currentUser}
       userData={userData}
-      onOpenStatus={onOpenStatus}
+      onOpenOrders={onOpenOrders}
       onOpenReservedRooms={onOpenReservedRooms}
+      onOpenRequests={onOpenRequests}
       onOpenInfo={onOpenInfo}
       activeScreen={activeScreen}
       onChangeScreen={setActiveScreen}
@@ -330,11 +358,13 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userData, setUserData] = useState(null);
 
-  const [activityStatusVisible, setActivityStatusVisible] = useState(false);
+  const [ordersModalVisible, setOrdersModalVisible] = useState(false);
   const [reservedRoomsModalVisible, setReservedRoomsModalVisible] = useState(false);
+  const [requestsModalVisible, setRequestsModalVisible] = useState(false);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
 
-  const [loadingActivity, setLoadingActivity] = useState(false);
+  const [loadingOrders, setLoadingOrders] = useState(false);
+  const [loadingRequests, setLoadingRequests] = useState(false);
   const [loadingReservedRooms, setLoadingReservedRooms] = useState(false);
 
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
@@ -371,9 +401,7 @@ export default function App() {
       } else {
         setUserData(null);
         setReservedRooms([]);
-        setUserOrders([]);
-        setUserRequests([]);
-        setInitialRoute("Login");
+        setInitialRoute("Welcome");
       }
     });
 
@@ -416,77 +444,84 @@ export default function App() {
     }
   };
 
-  useEffect(() => {
-    if (!currentUser) {
-      setUserOrders([]);
-      setUserRequests([]);
-      setLoadingActivity(false);
-      return undefined;
+  const fetchUserOrders = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
+
+      setLoadingOrders(true);
+
+      const ordersRef = collection(db, "orders");
+      const q = query(ordersRef, where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
+
+      const data = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
+
+      const cancellableOrders = data.filter(
+        (order) => order.status === "pending" || order.status === "confirmed"
+      );
+
+      cancellableOrders.sort((a, b) => {
+        const aTime = a.createdAt?.seconds || 0;
+        const bTime = b.createdAt?.seconds || 0;
+        return bTime - aTime;
+      });
+
+      setUserOrders(cancellableOrders);
+    } catch (error) {
+      console.log("Error fetching orders:", error);
+      Alert.alert("Error", "Failed to load orders.");
+    } finally {
+      setLoadingOrders(false);
     }
+  };
 
-    setLoadingActivity(true);
-    let ordersReady = false;
-    let requestsReady = false;
+  const fetchUserRequests = async () => {
+    try {
+      const user = auth.currentUser;
+      if (!user) return;
 
-    const finishInitialLoad = () => {
-      if (ordersReady && requestsReady) {
-        setLoadingActivity(false);
-      }
-    };
+      setLoadingRequests(true);
 
-    const ordersQuery = query(
-      collection(db, "orders"),
-      where("userId", "==", currentUser.uid)
-    );
-    const requestsQuery = query(
-      collection(db, "requests"),
-      where("userId", "==", currentUser.uid)
-    );
+      const requestsRef = collection(db, "requests");
+      const q = query(requestsRef, where("userId", "==", user.uid));
+      const snapshot = await getDocs(q);
 
-    const unsubscribeOrders = onSnapshot(
-      ordersQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }));
-        setUserOrders(data);
-        ordersReady = true;
-        finishInitialLoad();
-      },
-      (error) => {
-        console.log("Order status listener error:", error);
-        ordersReady = true;
-        finishInitialLoad();
-      }
-    );
+      const data = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+      }));
 
-    const unsubscribeRequests = onSnapshot(
-      requestsQuery,
-      (snapshot) => {
-        const data = snapshot.docs.map((docSnap) => ({
-          id: docSnap.id,
-          ...docSnap.data(),
-        }));
-        setUserRequests(data);
-        requestsReady = true;
-        finishInitialLoad();
-      },
-      (error) => {
-        console.log("Request status listener error:", error);
-        requestsReady = true;
-        finishInitialLoad();
-      }
-    );
+      const cancellableRequests = data.filter(
+        (request) => request.status === "pending" || request.status === "confirmed"
+      );
 
-    return () => {
-      unsubscribeOrders();
-      unsubscribeRequests();
-    };
-  }, [currentUser]);
+      cancellableRequests.sort((a, b) => {
+        const aTime = a.createdAt?.seconds || 0;
+        const bTime = b.createdAt?.seconds || 0;
+        return bTime - aTime;
+      });
 
-  const openActivityStatus = () => {
-    setActivityStatusVisible(true);
+      setUserRequests(cancellableRequests);
+    } catch (error) {
+      console.log("Error fetching requests:", error);
+      Alert.alert("Error", "Failed to load requests.");
+    } finally {
+      setLoadingRequests(false);
+    }
+  };
+
+  const openOrdersModal = async () => {
+    setOrdersModalVisible(true);
+    await fetchUserOrders();
+  };
+
+  const openRequestsModal = async () => {
+    setRequestsModalVisible(true);
+    await fetchUserRequests();
   };
 
   const openReservedRoomsModal = async () => {
@@ -747,18 +782,14 @@ export default function App() {
     try {
       setCancellingOrderId(order.id);
 
-      if (!["pending", "confirmed"].includes(order.status || "pending")) {
-        Alert.alert("Cannot Cancel", "This order is already being processed.");
-        return false;
-      }
-
-      await updateActivityStatus({
-        collectionName: "orders",
-        documentId: order.id,
+      await updateDoc(doc(db, "orders", order.id), {
         status: "cancelled",
-        statusMessage: "The guest cancelled this food order.",
-        actorId: user.uid,
+        cancelledAt: serverTimestamp(),
+        cancelledBy: user.uid,
+        updatedAt: serverTimestamp(),
       });
+
+      setUserOrders((prev) => prev.filter((item) => item.id !== order.id));
 
       Alert.alert("Order Cancelled", "Your order has been cancelled.");
       return true;
@@ -778,24 +809,14 @@ export default function App() {
     try {
       setCancellingRequestId(request.id);
 
-      const requestStatus =
-        request.status === "fulfilled"
-          ? "completed"
-          : request.status === "confirmed"
-          ? "acknowledged"
-          : request.status || "pending";
-      if (!["pending", "acknowledged"].includes(requestStatus)) {
-        Alert.alert("Cannot Cancel", "This request is already being processed.");
-        return false;
-      }
-
-      await updateActivityStatus({
-        collectionName: "requests",
-        documentId: request.id,
+      await updateDoc(doc(db, "requests", request.id), {
         status: "cancelled",
-        statusMessage: "The guest cancelled this service request.",
-        actorId: user.uid,
+        cancelledAt: serverTimestamp(),
+        cancelledBy: user.uid,
+        updatedAt: serverTimestamp(),
       });
+
+      setUserRequests((prev) => prev.filter((item) => item.id !== request.id));
 
       Alert.alert("Request Cancelled", "Your request has been cancelled.");
       return true;
@@ -813,8 +834,9 @@ export default function App() {
       currentUser,
       userData,
       onBookRoom: handleBookRoom,
-      onOpenStatus: openActivityStatus,
+      onOpenOrders: openOrdersModal,
       onOpenReservedRooms: openReservedRoomsModal,
+      onOpenRequests: openRequestsModal,
       onOpenInfo: () => setInfoModalVisible(true),
       roomStatusRefreshKey,
     }),
@@ -833,6 +855,7 @@ export default function App() {
     <>
       <NavigationContainer>
         <Stack.Navigator initialRouteName={initialRoute} screenOptions={{ headerShown: false }}>
+          <Stack.Screen name="Welcome" component={WelcomeScreen} />
           <Stack.Screen name="Login" component={LoginScreen} />
           <Stack.Screen name="Register" component={RegisterScreen} />
           <Stack.Screen name="Main">
@@ -841,16 +864,13 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
 
-      <ActivityStatusModal
-        visible={activityStatusVisible}
-        onClose={() => setActivityStatusVisible(false)}
-        orders={userOrders}
-        requests={userRequests}
-        loading={loadingActivity}
+      <OrdersModal
+        visible={ordersModalVisible}
+        onClose={() => setOrdersModalVisible(false)}
+        loadingOrders={loadingOrders}
+        userOrders={userOrders}
         onCancelOrder={handleCancelOrder}
-        onCancelRequest={handleCancelRequest}
         cancellingOrderId={cancellingOrderId}
-        cancellingRequestId={cancellingRequestId}
       />
 
       <ReservedRoomsModal
@@ -860,6 +880,15 @@ export default function App() {
         onCancelRoom={handleCancelRoom}
         loadingReservedRooms={loadingReservedRooms}
         cancellingRoomId={cancellingRoomId}
+      />
+
+      <RequestsModal
+        visible={requestsModalVisible}
+        onClose={() => setRequestsModalVisible(false)}
+        loadingRequests={loadingRequests}
+        userRequests={userRequests}
+        onCancelRequest={handleCancelRequest}
+        cancellingRequestId={cancellingRequestId}
       />
 
       <InfoModal
