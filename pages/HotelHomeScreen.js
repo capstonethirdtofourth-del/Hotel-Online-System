@@ -24,6 +24,7 @@ import { getAuth } from "firebase/auth";
 import { db } from "../FirebaseConfig";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import BookingDetailsModal from "./components/BookingDetailsModal";
+import Room360Modal from "./components/Room360Modal";
 
 export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [rooms, setRooms] = useState([]);
@@ -33,6 +34,8 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [activeBookingsByRoom, setActiveBookingsByRoom] = useState({});
   const [bookingDetailsVisible, setBookingDetailsVisible] = useState(false);
   const [roomForBooking, setRoomForBooking] = useState(null);
+  const [room360Visible, setRoom360Visible] = useState(false);
+  const [roomFor360, setRoomFor360] = useState(null);
 
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
@@ -302,6 +305,24 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     setRoomForBooking(null);
   };
 
+  const openRoom360Preview = (room) => {
+    if (!room?.panoramaUrl) {
+      Alert.alert(
+        "Preview Unavailable",
+        "This room does not have a 360° preview yet."
+      );
+      return;
+    }
+
+    setRoomFor360(room);
+    setRoom360Visible(true);
+  };
+
+  const closeRoom360Preview = () => {
+    setRoom360Visible(false);
+    setRoomFor360(null);
+  };
+
   const renderAmenityIcon = (item) => {
     switch (item) {
       case "wifi":
@@ -492,6 +513,29 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                   style={styles.modalImage}
                 />
 
+                {!!selectedRoom.panoramaUrl && (
+                  <TouchableOpacity
+                    style={styles.preview360Button}
+                    onPress={() => openRoom360Preview(selectedRoom)}
+                    activeOpacity={0.85}
+                  >
+                    <MaterialCommunityIcons
+                      name="rotate-3d-variant"
+                      size={22}
+                      color="#fff"
+                    />
+                    <View style={styles.preview360TextBox}>
+                      <Text style={styles.preview360ButtonText}>
+                        View 360° Room
+                      </Text>
+                      <Text style={styles.preview360ButtonHint}>
+                        Drag to look around and pinch to zoom
+                      </Text>
+                    </View>
+                    <Ionicons name="chevron-forward" size={22} color="#fff" />
+                  </TouchableOpacity>
+                )}
+
                 <View style={styles.modalPriceRow}>
                   <Text style={styles.modalPrice}>{selectedRoom.price}</Text>
                   <Text style={styles.modalSubtitle}>per night</Text>
@@ -578,6 +622,12 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         unavailableBookings={getRoomBookings(roomForBooking?.id)}
         onClose={closeBookingDetailsModal}
         onConfirmBooking={handleConfirmDetailedBooking}
+      />
+
+      <Room360Modal
+        visible={room360Visible}
+        room={roomFor360}
+        onClose={closeRoom360Preview}
       />
 
       <Modal
@@ -821,6 +871,29 @@ const styles = StyleSheet.create({
     height: 220,
     borderRadius: 16,
     marginBottom: 14,
+  },
+  preview360Button: {
+    backgroundColor: PRIMARY,
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 14,
+    marginBottom: 14,
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  preview360TextBox: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  preview360ButtonText: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  preview360ButtonHint: {
+    color: "#f2d9bd",
+    fontSize: 11,
+    marginTop: 2,
   },
   modalPriceRow: {
     flexDirection: "row",
