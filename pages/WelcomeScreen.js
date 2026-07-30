@@ -12,9 +12,16 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { WebView } from "react-native-webview";
+
+import LocationMapModal, {
+  HOTEL_ADDRESS,
+  HOTEL_MAP_EMBED_URL,
+} from "./components/LocationMapModal";
 
 const STAY_POSTER = require("../assets/images/welcome-stay.png");
 const FOOD_POSTER = require("../assets/images/welcome-food.png");
+const MAP_PREVIEW = require("../assets/images/location-preview.png");
 
 const BROWN = "#6B3200";
 const DEEP_BROWN = "#351706";
@@ -45,6 +52,7 @@ export default function WelcomeScreen({ navigation }) {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const [userInteracting, setUserInteracting] = useState(false);
+  const [mapVisible, setMapVisible] = useState(false);
 
   const isTablet = width >= 700;
   const isLandscape = width > height;
@@ -52,10 +60,11 @@ export default function WelcomeScreen({ navigation }) {
   const layout = useMemo(() => {
     const horizontalPadding = isTablet ? 34 : 14;
     const headerHeight = isTablet ? 70 : 58;
-    const footerHeight = isTablet ? 76 : 66;
+    const locationHeight = isTablet ? 116 : 98;
+    const footerHeight = isTablet ? 66 : 58;
     const availableHeight = Math.max(
-      360,
-      height - headerHeight - footerHeight - (isTablet ? 30 : 18)
+      310,
+      height - headerHeight - locationHeight - footerHeight - (isTablet ? 30 : 18)
     );
 
     const cardWidth = isTablet
@@ -63,12 +72,13 @@ export default function WelcomeScreen({ navigation }) {
       : width - horizontalPadding * 2;
 
     const cardHeight = isTablet
-      ? Math.min(availableHeight, 940)
+      ? Math.min(availableHeight, 900)
       : availableHeight;
 
     return {
       horizontalPadding,
       headerHeight,
+      locationHeight,
       footerHeight,
       cardWidth,
       cardHeight,
@@ -76,7 +86,7 @@ export default function WelcomeScreen({ navigation }) {
   }, [height, isLandscape, isTablet, width]);
 
   useEffect(() => {
-    if (userInteracting || SLIDES.length < 2) return undefined;
+    if (userInteracting || mapVisible || SLIDES.length < 2) return undefined;
 
     const timer = setInterval(() => {
       const nextIndex = (activeIndex + 1) % SLIDES.length;
@@ -84,7 +94,7 @@ export default function WelcomeScreen({ navigation }) {
     }, 5500);
 
     return () => clearInterval(timer);
-  }, [activeIndex, userInteracting]);
+  }, [activeIndex, mapVisible, userInteracting]);
 
   const handleMomentumEnd = (event) => {
     const nextIndex = Math.round(event.nativeEvent.contentOffset.x / width);
@@ -227,6 +237,51 @@ export default function WelcomeScreen({ navigation }) {
 
         <View
           style={[
+            styles.locationSection,
+            {
+              minHeight: layout.locationHeight,
+              paddingHorizontal: isTablet ? 28 : 14,
+            },
+          ]}
+        >
+          <TouchableOpacity
+            style={[
+              styles.locationCard,
+              isTablet && { width: Math.min(layout.cardWidth, 760) },
+            ]}
+            onPress={() => setMapVisible(true)}
+            activeOpacity={0.9}
+            accessibilityLabel="Open hotel location map"
+          >
+            <View style={styles.mapPreviewBox} pointerEvents="none">
+              <Image
+                source={MAP_PREVIEW}
+                style={styles.mapPreview}
+                resizeMode="cover"
+                accessibilityLabel="Hotel location preview"
+              />
+              <View style={styles.mapPreviewShade} />
+              <View style={styles.mapPinBadge}>
+                <Ionicons name="location" size={19} color={CREAM} />
+              </View>
+            </View>
+
+            <View style={styles.locationCopy}>
+              <Text style={styles.locationEyebrow}>VISIT H&K</Text>
+              <Text style={styles.locationTitle}>View our location</Text>
+              <Text style={styles.locationAddress} numberOfLines={2}>
+                {HOTEL_ADDRESS}
+              </Text>
+            </View>
+
+            <View style={styles.locationArrow}>
+              <Ionicons name="expand-outline" size={20} color={BROWN} />
+            </View>
+          </TouchableOpacity>
+        </View>
+
+        <View
+          style={[
             styles.footer,
             {
               minHeight: layout.footerHeight,
@@ -258,6 +313,11 @@ export default function WelcomeScreen({ navigation }) {
           </View>
         </View>
       </SafeAreaView>
+
+      <LocationMapModal
+        visible={mapVisible}
+        onClose={() => setMapVisible(false)}
+      />
     </View>
   );
 }
@@ -404,6 +464,84 @@ const styles = StyleSheet.create({
   posterImage: {
     width: "100%",
     height: "100%",
+  },
+  locationSection: {
+    alignItems: "center",
+    justifyContent: "center",
+    paddingVertical: 6,
+  },
+  locationCard: {
+    width: "100%",
+    minHeight: 86,
+    borderRadius: 18,
+    backgroundColor: CREAM,
+    borderWidth: 1,
+    borderColor: "rgba(216,178,106,0.8)",
+    overflow: "hidden",
+    flexDirection: "row",
+    alignItems: "center",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 5,
+  },
+  mapPreviewBox: {
+    alignSelf: "stretch",
+    width: 112,
+    backgroundColor: "#DED8CF",
+    overflow: "hidden",
+  },
+  mapPreview: {
+    flex: 1,
+    backgroundColor: "#DED8CF",
+  },
+  mapPreviewShade: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: "rgba(53,23,6,0.08)",
+  },
+  mapPinBadge: {
+    position: "absolute",
+    left: "50%",
+    top: "50%",
+    width: 34,
+    height: 34,
+    marginLeft: -17,
+    marginTop: -17,
+    borderRadius: 17,
+    backgroundColor: BROWN,
+    alignItems: "center",
+    justifyContent: "center",
+    borderWidth: 2,
+    borderColor: CREAM,
+  },
+  locationCopy: {
+    flex: 1,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+  },
+  locationEyebrow: {
+    color: "#A6722C",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1.1,
+  },
+  locationTitle: {
+    color: DEEP_BROWN,
+    fontSize: 16,
+    fontWeight: "900",
+    marginTop: 2,
+  },
+  locationAddress: {
+    color: "#7B604D",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 3,
+  },
+  locationArrow: {
+    width: 42,
+    alignItems: "center",
+    justifyContent: "center",
   },
   footer: {
     flexDirection: "row",
