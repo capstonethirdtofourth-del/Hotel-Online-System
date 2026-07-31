@@ -16,6 +16,15 @@ import { Calendar } from "react-native-calendars";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { auth, db } from "../../FirebaseConfig";
 
+const BROWN = "#6B3200";
+const DEEP_BROWN = "#351706";
+const CREAM = "#FFF8E7";
+const CARD = "#FFFDF7";
+const GOLD = "#D8B26A";
+const SOFT_GOLD = "#F5E4BF";
+const MUTED_BROWN = "#7B604D";
+const LIGHT_BORDER = "#E6D2AA";
+
 const ADD_ONS = [
   {
     id: "breakfast",
@@ -131,8 +140,8 @@ function buildMarkedDates(
       marked[dateString] = {
         startingDay: index === 0,
         endingDay: index === reservedNights.length - 1,
-        color: "#fee2e2",
-        textColor: "#b91c1c",
+        color: "#FCE8E6",
+        textColor: "#B84040",
       };
     });
   });
@@ -144,7 +153,7 @@ function buildMarkedDates(
       selected: true,
       startingDay: true,
       endingDay: true,
-      color: "#111827",
+      color: BROWN,
       textColor: "#ffffff",
     };
     return marked;
@@ -159,8 +168,8 @@ function buildMarkedDates(
     marked[dateString] = {
       startingDay: isStart,
       endingDay: isEnd,
-      color: isStart || isEnd ? "#111827" : "#e5e7eb",
-      textColor: isStart || isEnd ? "#ffffff" : "#111827",
+      color: isStart || isEnd ? BROWN : SOFT_GOLD,
+      textColor: isStart || isEnd ? "#ffffff" : DEEP_BROWN,
     };
   });
 
@@ -615,19 +624,19 @@ export default function BookingDetailsModal({
               enableSwipeMonths
               hideExtraDays={false}
               theme={{
-                backgroundColor: "#ffffff",
-                calendarBackground: "#ffffff",
-                textSectionTitleColor: "#6b7280",
-                selectedDayBackgroundColor: "#111827",
+                backgroundColor: CARD,
+                calendarBackground: CARD,
+                textSectionTitleColor: MUTED_BROWN,
+                selectedDayBackgroundColor: BROWN,
                 selectedDayTextColor: "#ffffff",
-                todayTextColor: "#111827",
-                dayTextColor: "#111827",
-                textDisabledColor: "#d1d5db",
-                monthTextColor: "#111827",
+                todayTextColor: BROWN,
+                dayTextColor: DEEP_BROWN,
+                textDisabledColor: "#D6C8BA",
+                monthTextColor: BROWN,
                 textMonthFontWeight: "800",
                 textDayFontWeight: "600",
                 textDayHeaderFontWeight: "700",
-                arrowColor: "#111827",
+                arrowColor: BROWN,
               }}
               style={styles.calendar}
             />
@@ -865,11 +874,11 @@ function SummaryRow({ label, value, large }) {
 const styles = StyleSheet.create({
   overlay: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.45)",
+    backgroundColor: "rgba(53,23,6,0.48)",
     justifyContent: "flex-end",
   },
   modalContainer: {
-    backgroundColor: "#fff",
+    backgroundColor: CREAM,
     maxHeight: "94%",
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
@@ -886,28 +895,28 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 22,
     fontWeight: "800",
-    color: "#1f2937",
+    color: DEEP_BROWN,
   },
   subtitle: {
     fontSize: 14,
-    color: "#6b7280",
+    color: MUTED_BROWN,
     marginTop: 2,
   },
   closeButton: {
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "#f3f4f6",
+    backgroundColor: SOFT_GOLD,
     alignItems: "center",
     justifyContent: "center",
   },
   closeButtonText: {
     fontSize: 26,
-    color: "#374151",
+    color: BROWN,
     marginTop: -2,
   },
   roomCard: {
-    backgroundColor: "#ecfdf5",
+    backgroundColor: SOFT_GOLD,
     borderRadius: 16,
     padding: 14,
     marginBottom: 16,
@@ -915,17 +924,17 @@ const styles = StyleSheet.create({
   roomPrice: {
     fontSize: 18,
     fontWeight: "800",
-    color: "#065f46",
+    color: BROWN,
   },
   roomNote: {
-    color: "#047857",
+    color: MUTED_BROWN,
     marginTop: 4,
     lineHeight: 20,
   },
   sectionTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#111827",
+    color: DEEP_BROWN,
     marginTop: 18,
     marginBottom: 10,
   },
@@ -933,9 +942,9 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: LIGHT_BORDER,
     borderRadius: 18,
-    backgroundColor: "#ffffff",
+    backgroundColor: CARD,
     overflow: "hidden",
   },
   dateSummaryBlock: {
@@ -946,20 +955,20 @@ const styles = StyleSheet.create({
   dateDivider: {
     width: 1,
     alignSelf: "stretch",
-    backgroundColor: "#e5e7eb",
+    backgroundColor: LIGHT_BORDER,
   },
   dateSummaryLabel: {
     fontSize: 12,
-    color: "#6b7280",
+    color: MUTED_BROWN,
     marginBottom: 4,
   },
   dateSummaryValue: {
     fontSize: 15,
     fontWeight: "800",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   helperText: {
-    color: "#6b7280",
+    color: MUTED_BROWN,
     fontSize: 12,
     marginTop: 8,
   },
@@ -982,21 +991,21 @@ const styles = StyleSheet.create({
     marginRight: 6,
   },
   selectedSwatch: {
-    backgroundColor: "#111827",
+    backgroundColor: BROWN,
   },
   reservedSwatch: {
-    backgroundColor: "#fee2e2",
+    backgroundColor: "#FCE8E6",
     borderWidth: 1,
-    borderColor: "#ef4444",
+    borderColor: "#B84040",
   },
   legendText: {
-    color: "#6b7280",
+    color: MUTED_BROWN,
     fontSize: 12,
   },
   calendar: {
     marginTop: 12,
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: LIGHT_BORDER,
     borderRadius: 18,
     overflow: "hidden",
   },
@@ -1008,17 +1017,17 @@ const styles = StyleSheet.create({
   },
   resetPill: {
     borderWidth: 1,
-    borderColor: "#111827",
+    borderColor: BROWN,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
   },
   resetPillText: {
-    color: "#111827",
+    color: DEEP_BROWN,
     fontWeight: "700",
   },
   nightPill: {
-    backgroundColor: "#111827",
+    backgroundColor: BROWN,
     borderRadius: 999,
     paddingHorizontal: 14,
     paddingVertical: 10,
@@ -1029,21 +1038,21 @@ const styles = StyleSheet.create({
   },
   selectBox: {
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: GOLD,
     borderRadius: 14,
     padding: 14,
     marginBottom: 10,
-    backgroundColor: "#fff",
+    backgroundColor: CARD,
   },
   label: {
     fontSize: 12,
-    color: "#6b7280",
+    color: MUTED_BROWN,
     marginBottom: 4,
   },
   selectValue: {
     fontSize: 16,
     fontWeight: "700",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   counterRow: {
     flexDirection: "row",
@@ -1051,16 +1060,16 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#f3f4f6",
+    borderBottomColor: "#EFE2CC",
   },
   counterTitle: {
     fontSize: 15,
     fontWeight: "700",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   counterSubtitle: {
     fontSize: 12,
-    color: "#6b7280",
+    color: MUTED_BROWN,
     marginTop: 2,
   },
   counterControls: {
@@ -1071,13 +1080,13 @@ const styles = StyleSheet.create({
     width: 34,
     height: 34,
     borderRadius: 17,
-    backgroundColor: "#10b981",
+    backgroundColor: BROWN,
     alignItems: "center",
     justifyContent: "center",
     marginHorizontal: 6,
   },
   counterButtonDisabled: {
-    backgroundColor: "#d1d5db",
+    backgroundColor: "#D5C7B7",
   },
   counterButtonText: {
     color: "#fff",
@@ -1090,51 +1099,51 @@ const styles = StyleSheet.create({
     textAlign: "center",
     fontSize: 17,
     fontWeight: "800",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   warningText: {
-    backgroundColor: "#fef2f2",
-    color: "#b91c1c",
+    backgroundColor: "#FCE8E6",
+    color: "#B84040",
     padding: 10,
     borderRadius: 12,
     marginTop: 10,
     fontWeight: "600",
   },
   suggestionBox: {
-    backgroundColor: "#fffbeb",
+    backgroundColor: "#FFF1D6",
     padding: 10,
     borderRadius: 12,
     marginBottom: 8,
   },
   suggestionText: {
-    color: "#92400e",
+    color: "#7B4D16",
     lineHeight: 20,
   },
   addOnCard: {
     flexDirection: "row",
     alignItems: "center",
     borderWidth: 1,
-    borderColor: "#e5e7eb",
+    borderColor: LIGHT_BORDER,
     borderRadius: 14,
     padding: 12,
     marginBottom: 10,
   },
   addOnCardSelected: {
-    borderColor: "#10b981",
-    backgroundColor: "#ecfdf5",
+    borderColor: BROWN,
+    backgroundColor: SOFT_GOLD,
   },
   checkbox: {
     width: 24,
     height: 24,
     borderRadius: 8,
     borderWidth: 1,
-    borderColor: "#10b981",
+    borderColor: BROWN,
     alignItems: "center",
     justifyContent: "center",
     marginRight: 10,
   },
   checkboxText: {
-    color: "#059669",
+    color: BROWN,
     fontWeight: "900",
   },
   addOnInfo: {
@@ -1147,42 +1156,44 @@ const styles = StyleSheet.create({
   },
   automaticBadge: {
     marginLeft: 8,
-    backgroundColor: "#dcfce7",
+    backgroundColor: SOFT_GOLD,
     borderRadius: 999,
     paddingHorizontal: 8,
     paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: GOLD,
   },
   automaticBadgeText: {
-    color: "#166534",
+    color: BROWN,
     fontSize: 10,
     fontWeight: "800",
   },
   addOnName: {
     fontSize: 14,
     fontWeight: "800",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   addOnDescription: {
     fontSize: 12,
-    color: "#6b7280",
+    color: MUTED_BROWN,
     marginTop: 2,
   },
   addOnPrice: {
     fontWeight: "800",
-    color: "#065f46",
+    color: BROWN,
     marginLeft: 10,
   },
   textArea: {
     minHeight: 90,
     borderWidth: 1,
-    borderColor: "#d1d5db",
+    borderColor: GOLD,
     borderRadius: 14,
     padding: 12,
     textAlignVertical: "top",
-    color: "#111827",
+    color: DEEP_BROWN,
   },
   summaryCard: {
-    backgroundColor: "#f9fafb",
+    backgroundColor: SOFT_GOLD,
     borderRadius: 16,
     padding: 14,
     marginTop: 18,
@@ -1191,7 +1202,7 @@ const styles = StyleSheet.create({
   summaryTitle: {
     fontSize: 16,
     fontWeight: "800",
-    color: "#111827",
+    color: DEEP_BROWN,
     marginBottom: 10,
   },
   summaryRow: {
@@ -1200,33 +1211,33 @@ const styles = StyleSheet.create({
     marginBottom: 8,
   },
   summaryLabel: {
-    color: "#4b5563",
+    color: MUTED_BROWN,
     flex: 1,
     marginRight: 10,
   },
   summaryValue: {
-    color: "#111827",
+    color: DEEP_BROWN,
     fontWeight: "700",
   },
   summaryLarge: {
     fontSize: 17,
     fontWeight: "900",
-    color: "#065f46",
+    color: BROWN,
   },
   divider: {
     height: 1,
-    backgroundColor: "#e5e7eb",
+    backgroundColor: LIGHT_BORDER,
     marginVertical: 8,
   },
   confirmButton: {
-    backgroundColor: "#10b981",
+    backgroundColor: BROWN,
     paddingVertical: 15,
     borderRadius: 16,
     alignItems: "center",
     marginBottom: 10,
   },
   confirmButtonDisabled: {
-    backgroundColor: "#9ca3af",
+    backgroundColor: "#B8A28F",
   },
   confirmButtonText: {
     color: "#fff",

@@ -46,7 +46,10 @@ export default function LoginScreen({ navigation }) {
         return;
         }
 
-        navigation.replace("Main");
+        navigation.reset({
+          index: 0,
+          routes: [{ name: "Main" }],
+        });
     } catch (error) {
         let message = "Something went wrong.";
 

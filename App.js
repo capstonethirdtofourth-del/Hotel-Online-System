@@ -22,6 +22,7 @@ import {
   doc,
   updateDoc,
   serverTimestamp,
+  onSnapshot,
 } from "firebase/firestore";
 import { auth, db } from "./FirebaseConfig";
 import { useFonts } from "expo-font";
@@ -29,6 +30,7 @@ import {
   createBookingWithNightLocks,
   releaseBookingLocksAndUpdateStatus,
 } from "./services/bookingLockService";
+import { updateActivityStatus } from "./services/activityStatusService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -37,13 +39,14 @@ import RequestScreen from "./pages/RequestScreen";
 import RegisterScreen from "./pages/RegisterScreen";
 import LoginScreen from "./pages/LoginScreen";
 import WelcomeScreen from "./pages/WelcomeScreen";
-import OrdersModal from "./pages/components/OrdersModal";
 import ReservedRoomsModal from "./AppComponent/ReservedRoomsModal";
-import RequestsModal from "./AppComponent/RequestsModal";
 import InfoModal from "./AppComponent/InfoModal";
+import ActivityStatusModal from "./AppComponent/ActivityStatusModal";
 
 import AdminRoomScreen from "./pages/admin/AdminRoomScreen";
 import AdminRequestScreen from "./pages/admin/AdminRequestScreen";
+import AdminFoodOrderScreen from "./pages/admin/AdminFoodOrderScreen";
+import AdminDashboardScreen from "./pages/admin/AdminDashboardScreen";
 
 const Stack = createNativeStackNavigator();
 
@@ -51,9 +54,8 @@ function MainLayout({
   navigation,
   currentUser,
   userData,
-  onOpenOrders,
+  onOpenStatus,
   onOpenReservedRooms,
-  onOpenRequests,
   onOpenInfo,
   activeScreen,
   onChangeScreen,
@@ -62,8 +64,24 @@ function MainLayout({
 }) {
   const [menuVisible, setMenuVisible] = useState(false);
 
-  const displayName = userData?.fullName || "Guest User";
+  const displayName = userData?.fullName || (isAdmin ? "Hotel Administrator" : "Guest User");
   const userEmail = currentUser?.email || "No email";
+
+  const adminScreenTitles = {
+    AdminDashboard: "Admin Dashboard",
+    Rooms: "Room Management",
+    FoodMenu: "Food Order Management",
+    Request: "Guest Request Management",
+  };
+
+  const headerTitle = isAdmin
+    ? adminScreenTitles[activeScreen] || "H&K Admin"
+    : "H&K Hotel and Home Kafe";
+
+  const changeScreenFromMenu = (screenName) => {
+    setMenuVisible(false);
+    onChangeScreen(screenName);
+  };
 
   const confirmLogout = () => {
     setMenuVisible(false);
@@ -90,17 +108,30 @@ function MainLayout({
     <SafeAreaView style={styles.container}>
       <View style={styles.header}>
         <View style={styles.topRow}>
-          <TouchableOpacity onPress={() => setMenuVisible(true)}>
+          <TouchableOpacity
+            style={styles.headerMenuButton}
+            onPress={() => setMenuVisible(true)}
+            accessibilityLabel="Open navigation menu"
+          >
             <Ionicons name="menu-outline" size={30} color="#fff" />
           </TouchableOpacity>
-          <Text style={styles.headerTitle}>H&K Hotel and Home Kafe</Text>
+
+          <Text
+            style={[
+              styles.headerTitle,
+              isAdmin && styles.adminHeaderTitle,
+            ]}
+            numberOfLines={1}
+          >
+            {headerTitle}
+          </Text>
         </View>
       </View>
 
       <View style={styles.pageContent}>{children}</View>
 
-      <View style={styles.bottomNav}>
-        {!isAdmin && (
+      {!isAdmin && (
+        <View style={styles.bottomNav}>
           <TouchableOpacity
             style={styles.navItem}
             onPress={() => onChangeScreen("Landing")}
@@ -119,135 +150,173 @@ function MainLayout({
               Home
             </Text>
           </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => onChangeScreen("Rooms")}
-        >
-          <MaterialCommunityIcons
-            name="bed-king-outline"
-            size={23}
-            color={activeScreen === "Rooms" ? "#ffd37a" : "#fff"}
-          />
-          <Text
-            style={[
-              styles.navText,
-              activeScreen === "Rooms" && styles.activeNavText,
-            ]}
-          >
-            Rooms
-          </Text>
-        </TouchableOpacity>
 
           <TouchableOpacity
-            style={[styles.navItem, isAdmin && styles.disabledNavItem]}
-            disabled={isAdmin}
+            style={styles.navItem}
+            onPress={() => onChangeScreen("Rooms")}
+          >
+            <MaterialCommunityIcons
+              name="bed-king-outline"
+              size={23}
+              color={activeScreen === "Rooms" ? "#ffd37a" : "#fff"}
+            />
+            <Text
+              style={[
+                styles.navText,
+                activeScreen === "Rooms" && styles.activeNavText,
+              ]}
+            >
+              Rooms
+            </Text>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.navItem}
             onPress={() => onChangeScreen("FoodMenu")}
           >
             <Ionicons
               name="restaurant-outline"
               size={23}
-              color={isAdmin ? "rgba(255,255,255,0.45)" : activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
+              color={activeScreen === "FoodMenu" ? "#ffd37a" : "#fff"}
             />
             <Text
               style={[
                 styles.navText,
                 activeScreen === "FoodMenu" && styles.activeNavText,
-                isAdmin && styles.disabledNavText,
               ]}
             >
               Food
             </Text>
           </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.navItem}
-          onPress={() => onChangeScreen("Request")}
-        >
-          <Feather
-            name="edit"
-            size={21}
-            color={activeScreen === "Request" ? "#ffd37a" : "#fff"}
-          />
-          <Text
-            style={[
-              styles.navText,
-              activeScreen === "Request" && styles.activeNavText,
-            ]}
+          <TouchableOpacity
+            style={styles.navItem}
+            onPress={() => onChangeScreen("Request")}
           >
-            Request
-          </Text>
-        </TouchableOpacity>
-      </View>
+            <Feather
+              name="edit"
+              size={21}
+              color={activeScreen === "Request" ? "#ffd37a" : "#fff"}
+            />
+            <Text
+              style={[
+                styles.navText,
+                activeScreen === "Request" && styles.activeNavText,
+              ]}
+            >
+              Request
+            </Text>
+          </TouchableOpacity>
+        </View>
+      )}
 
-      <View pointerEvents={menuVisible ? "auto" : "none"} style={StyleSheet.absoluteFill}>
+      <View
+        pointerEvents={menuVisible ? "auto" : "none"}
+        style={StyleSheet.absoluteFill}
+      >
         {menuVisible && (
           <View style={styles.modalOverlay}>
             <View style={styles.sideMenu}>
               <View style={styles.userCard}>
-                <Ionicons name="person-circle-outline" size={54} color="#4b3a2f" />
+                <Ionicons
+                  name={isAdmin ? "shield-checkmark-outline" : "person-circle-outline"}
+                  size={54}
+                  color="#4b3a2f"
+                />
                 <View style={{ marginLeft: 10, flex: 1 }}>
                   <Text style={styles.userName}>{displayName}</Text>
                   <Text style={styles.userEmail}>{userEmail}</Text>
+                  {isAdmin && <Text style={styles.adminRoleLabel}>ADMIN ACCOUNT</Text>}
                 </View>
               </View>
 
-              <Text style={styles.sideMenuTitle}>Menu</Text>
+              <Text style={styles.sideMenuTitle}>
+                {isAdmin ? "Admin Navigation" : "Menu"}
+              </Text>
 
-              <TouchableOpacity
-                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
-                disabled={isAdmin}
-                onPress={() => {
-                  setMenuVisible(false);
-                  onOpenOrders();
-                }}
-              >
-                <Ionicons
-                  name="receipt-outline"
-                  size={22}
-                  color={isAdmin ? "#9ca3af" : "#030303"}
-                />
-                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
-                  Orders
-                </Text>
-              </TouchableOpacity>
+              {isAdmin ? (
+                <>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      activeScreen === "AdminDashboard" && styles.activeMenuItem,
+                    ]}
+                    onPress={() => changeScreenFromMenu("AdminDashboard")}
+                  >
+                    <Ionicons name="grid-outline" size={22} color="#4b3a2f" />
+                    <Text style={styles.menuText}>Dashboard</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
-                disabled={isAdmin}
-                onPress={() => {
-                  setMenuVisible(false);
-                  onOpenReservedRooms();
-                }}
-              >
-                <MaterialCommunityIcons
-                  name="bed-outline"
-                  size={22}
-                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
-                />
-                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
-                  Reserved Room
-                </Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      activeScreen === "Rooms" && styles.activeMenuItem,
+                    ]}
+                    onPress={() => changeScreenFromMenu("Rooms")}
+                  >
+                    <MaterialCommunityIcons
+                      name="bed-king-outline"
+                      size={22}
+                      color="#4b3a2f"
+                    />
+                    <Text style={styles.menuText}>Rooms</Text>
+                  </TouchableOpacity>
 
-              <TouchableOpacity
-                style={[styles.menuItem, isAdmin && styles.disabledMenuItem]}
-                disabled={isAdmin}
-                onPress={() => {
-                  setMenuVisible(false);
-                  onOpenRequests();
-                }}
-              >
-                <Feather
-                  name="file-text"
-                  size={20}
-                  color={isAdmin ? "#9ca3af" : "#4b3a2f"}
-                />
-                <Text style={[styles.menuText, isAdmin && styles.disabledMenuText]}>
-                  Requests
-                </Text>
-              </TouchableOpacity>
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      activeScreen === "FoodMenu" && styles.activeMenuItem,
+                    ]}
+                    onPress={() => changeScreenFromMenu("FoodMenu")}
+                  >
+                    <Ionicons
+                      name="restaurant-outline"
+                      size={22}
+                      color="#4b3a2f"
+                    />
+                    <Text style={styles.menuText}>Food Orders</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={[
+                      styles.menuItem,
+                      activeScreen === "Request" && styles.activeMenuItem,
+                    ]}
+                    onPress={() => changeScreenFromMenu("Request")}
+                  >
+                    <Feather name="file-text" size={21} color="#4b3a2f" />
+                    <Text style={styles.menuText}>Guest Requests</Text>
+                  </TouchableOpacity>
+                </>
+              ) : (
+                <>
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setMenuVisible(false);
+                      onOpenStatus();
+                    }}
+                  >
+                    <Ionicons name="pulse-outline" size={22} color="#4b3a2f" />
+                    <Text style={styles.menuText}>Status</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setMenuVisible(false);
+                      onOpenReservedRooms();
+                    }}
+                  >
+                    <MaterialCommunityIcons
+                      name="bed-outline"
+                      size={22}
+                      color="#4b3a2f"
+                    />
+                    <Text style={styles.menuText}>Reserved Room</Text>
+                  </TouchableOpacity>
+                </>
+              )}
 
               <TouchableOpacity
                 style={styles.menuItem}
@@ -256,7 +325,11 @@ function MainLayout({
                   onOpenInfo();
                 }}
               >
-                <Ionicons name="information-circle-outline" size={22} color="#4b3a2f" />
+                <Ionicons
+                  name="information-circle-outline"
+                  size={22}
+                  color="#4b3a2f"
+                />
                 <Text style={styles.menuText}>Hotel Info</Text>
               </TouchableOpacity>
 
@@ -268,7 +341,10 @@ function MainLayout({
               </TouchableOpacity>
             </View>
 
-            <Pressable style={styles.backdrop} onPress={() => setMenuVisible(false)} />
+            <Pressable
+              style={styles.backdrop}
+              onPress={() => setMenuVisible(false)}
+            />
           </View>
         )}
       </View>
@@ -281,9 +357,8 @@ function MainShell({
   currentUser,
   userData,
   onBookRoom,
-  onOpenOrders,
+  onOpenStatus,
   onOpenReservedRooms,
-  onOpenRequests,
   onOpenInfo,
   roomStatusRefreshKey,
 }) {
@@ -291,20 +366,33 @@ function MainShell({
   const [activeScreen, setActiveScreen] = useState("Landing");
 
   useEffect(() => {
-    if (isAdmin && activeScreen === "Landing") {
-      setActiveScreen("Rooms");
+    if (isAdmin) {
+      if (!["AdminDashboard", "Rooms", "FoodMenu", "Request"].includes(activeScreen)) {
+        setActiveScreen("AdminDashboard");
+      }
+      return;
+    }
+
+    if (activeScreen === "AdminDashboard") {
+      setActiveScreen("Landing");
     }
   }, [isAdmin, activeScreen]);
 
   const renderContent = () => {
     if (isAdmin) {
       switch (activeScreen) {
+        case "Rooms":
+          return <AdminRoomScreen />;
+
+        case "FoodMenu":
+          return <AdminFoodOrderScreen />;
+
         case "Request":
           return <AdminRequestScreen />;
 
-        case "Rooms":
+        case "AdminDashboard":
         default:
-          return <AdminRoomScreen />;
+          return <AdminDashboardScreen onNavigate={setActiveScreen} />;
       }
     }
 
@@ -336,9 +424,8 @@ function MainShell({
       navigation={navigation}
       currentUser={currentUser}
       userData={userData}
-      onOpenOrders={onOpenOrders}
+      onOpenStatus={onOpenStatus}
       onOpenReservedRooms={onOpenReservedRooms}
-      onOpenRequests={onOpenRequests}
       onOpenInfo={onOpenInfo}
       activeScreen={activeScreen}
       onChangeScreen={setActiveScreen}
@@ -358,13 +445,11 @@ export default function App() {
   const [currentUser, setCurrentUser] = useState(null);
   const [userData, setUserData] = useState(null);
 
-  const [ordersModalVisible, setOrdersModalVisible] = useState(false);
+  const [activityStatusVisible, setActivityStatusVisible] = useState(false);
   const [reservedRoomsModalVisible, setReservedRoomsModalVisible] = useState(false);
-  const [requestsModalVisible, setRequestsModalVisible] = useState(false);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
 
-  const [loadingOrders, setLoadingOrders] = useState(false);
-  const [loadingRequests, setLoadingRequests] = useState(false);
+  const [loadingActivity, setLoadingActivity] = useState(false);
   const [loadingReservedRooms, setLoadingReservedRooms] = useState(false);
 
   const [cancellingOrderId, setCancellingOrderId] = useState(null);
@@ -401,6 +486,8 @@ export default function App() {
       } else {
         setUserData(null);
         setReservedRooms([]);
+        setUserOrders([]);
+        setUserRequests([]);
         setInitialRoute("Welcome");
       }
     });
@@ -444,84 +531,77 @@ export default function App() {
     }
   };
 
-  const fetchUserOrders = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) return;
-
-      setLoadingOrders(true);
-
-      const ordersRef = collection(db, "orders");
-      const q = query(ordersRef, where("userId", "==", user.uid));
-      const snapshot = await getDocs(q);
-
-      const data = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-
-      const cancellableOrders = data.filter(
-        (order) => order.status === "pending" || order.status === "confirmed"
-      );
-
-      cancellableOrders.sort((a, b) => {
-        const aTime = a.createdAt?.seconds || 0;
-        const bTime = b.createdAt?.seconds || 0;
-        return bTime - aTime;
-      });
-
-      setUserOrders(cancellableOrders);
-    } catch (error) {
-      console.log("Error fetching orders:", error);
-      Alert.alert("Error", "Failed to load orders.");
-    } finally {
-      setLoadingOrders(false);
+  useEffect(() => {
+    if (!currentUser) {
+      setUserOrders([]);
+      setUserRequests([]);
+      setLoadingActivity(false);
+      return undefined;
     }
-  };
 
-  const fetchUserRequests = async () => {
-    try {
-      const user = auth.currentUser;
-      if (!user) return;
+    setLoadingActivity(true);
+    let ordersReady = false;
+    let requestsReady = false;
 
-      setLoadingRequests(true);
+    const finishInitialLoad = () => {
+      if (ordersReady && requestsReady) {
+        setLoadingActivity(false);
+      }
+    };
 
-      const requestsRef = collection(db, "requests");
-      const q = query(requestsRef, where("userId", "==", user.uid));
-      const snapshot = await getDocs(q);
+    const ordersQuery = query(
+      collection(db, "orders"),
+      where("userId", "==", currentUser.uid)
+    );
+    const requestsQuery = query(
+      collection(db, "requests"),
+      where("userId", "==", currentUser.uid)
+    );
 
-      const data = snapshot.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
+    const unsubscribeOrders = onSnapshot(
+      ordersQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setUserOrders(data);
+        ordersReady = true;
+        finishInitialLoad();
+      },
+      (error) => {
+        console.log("Order status listener error:", error);
+        ordersReady = true;
+        finishInitialLoad();
+      }
+    );
 
-      const cancellableRequests = data.filter(
-        (request) => request.status === "pending" || request.status === "confirmed"
-      );
+    const unsubscribeRequests = onSnapshot(
+      requestsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+        setUserRequests(data);
+        requestsReady = true;
+        finishInitialLoad();
+      },
+      (error) => {
+        console.log("Request status listener error:", error);
+        requestsReady = true;
+        finishInitialLoad();
+      }
+    );
 
-      cancellableRequests.sort((a, b) => {
-        const aTime = a.createdAt?.seconds || 0;
-        const bTime = b.createdAt?.seconds || 0;
-        return bTime - aTime;
-      });
+    return () => {
+      unsubscribeOrders();
+      unsubscribeRequests();
+    };
+  }, [currentUser]);
 
-      setUserRequests(cancellableRequests);
-    } catch (error) {
-      console.log("Error fetching requests:", error);
-      Alert.alert("Error", "Failed to load requests.");
-    } finally {
-      setLoadingRequests(false);
-    }
-  };
-
-  const openOrdersModal = async () => {
-    setOrdersModalVisible(true);
-    await fetchUserOrders();
-  };
-
-  const openRequestsModal = async () => {
-    setRequestsModalVisible(true);
-    await fetchUserRequests();
+  const openActivityStatus = () => {
+    setActivityStatusVisible(true);
   };
 
   const openReservedRoomsModal = async () => {
@@ -782,14 +862,18 @@ export default function App() {
     try {
       setCancellingOrderId(order.id);
 
-      await updateDoc(doc(db, "orders", order.id), {
-        status: "cancelled",
-        cancelledAt: serverTimestamp(),
-        cancelledBy: user.uid,
-        updatedAt: serverTimestamp(),
-      });
+      if (!["pending", "confirmed"].includes(order.status || "pending")) {
+        Alert.alert("Cannot Cancel", "This order is already being processed.");
+        return false;
+      }
 
-      setUserOrders((prev) => prev.filter((item) => item.id !== order.id));
+      await updateActivityStatus({
+        collectionName: "orders",
+        documentId: order.id,
+        status: "cancelled",
+        statusMessage: "The guest cancelled this food order.",
+        actorId: user.uid,
+      });
 
       Alert.alert("Order Cancelled", "Your order has been cancelled.");
       return true;
@@ -809,14 +893,24 @@ export default function App() {
     try {
       setCancellingRequestId(request.id);
 
-      await updateDoc(doc(db, "requests", request.id), {
-        status: "cancelled",
-        cancelledAt: serverTimestamp(),
-        cancelledBy: user.uid,
-        updatedAt: serverTimestamp(),
-      });
+      const requestStatus =
+        request.status === "fulfilled"
+          ? "completed"
+          : request.status === "confirmed"
+          ? "acknowledged"
+          : request.status || "pending";
+      if (!["pending", "acknowledged"].includes(requestStatus)) {
+        Alert.alert("Cannot Cancel", "This request is already being processed.");
+        return false;
+      }
 
-      setUserRequests((prev) => prev.filter((item) => item.id !== request.id));
+      await updateActivityStatus({
+        collectionName: "requests",
+        documentId: request.id,
+        status: "cancelled",
+        statusMessage: "The guest cancelled this service request.",
+        actorId: user.uid,
+      });
 
       Alert.alert("Request Cancelled", "Your request has been cancelled.");
       return true;
@@ -834,9 +928,8 @@ export default function App() {
       currentUser,
       userData,
       onBookRoom: handleBookRoom,
-      onOpenOrders: openOrdersModal,
+      onOpenStatus: openActivityStatus,
       onOpenReservedRooms: openReservedRoomsModal,
-      onOpenRequests: openRequestsModal,
       onOpenInfo: () => setInfoModalVisible(true),
       roomStatusRefreshKey,
     }),
@@ -864,13 +957,16 @@ export default function App() {
         </Stack.Navigator>
       </NavigationContainer>
 
-      <OrdersModal
-        visible={ordersModalVisible}
-        onClose={() => setOrdersModalVisible(false)}
-        loadingOrders={loadingOrders}
-        userOrders={userOrders}
+      <ActivityStatusModal
+        visible={activityStatusVisible}
+        onClose={() => setActivityStatusVisible(false)}
+        orders={userOrders}
+        requests={userRequests}
+        loading={loadingActivity}
         onCancelOrder={handleCancelOrder}
+        onCancelRequest={handleCancelRequest}
         cancellingOrderId={cancellingOrderId}
+        cancellingRequestId={cancellingRequestId}
       />
 
       <ReservedRoomsModal
@@ -880,15 +976,6 @@ export default function App() {
         onCancelRoom={handleCancelRoom}
         loadingReservedRooms={loadingReservedRooms}
         cancellingRoomId={cancellingRoomId}
-      />
-
-      <RequestsModal
-        visible={requestsModalVisible}
-        onClose={() => setRequestsModalVisible(false)}
-        loadingRequests={loadingRequests}
-        userRequests={userRequests}
-        onCancelRequest={handleCancelRequest}
-        cancellingRequestId={cancellingRequestId}
       />
 
       <InfoModal
@@ -925,12 +1012,23 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
   },
+  headerMenuButton: {
+    width: 38,
+    height: 38,
+    alignItems: "center",
+    justifyContent: "center",
+  },
   headerTitle: {
     color: "#ffffff",
     fontSize: 23,
     fontFamily: "Pacifico",
     flexShrink: 1,
-    marginLeft: 10,
+    marginLeft: 8,
+  },
+  adminHeaderTitle: {
+    fontFamily: "Roboto",
+    fontSize: 20,
+    fontWeight: "800",
   },
   pageContent: {
     flex: 1,
@@ -999,6 +1097,13 @@ const styles = StyleSheet.create({
     color: "#7b6c60",
     marginTop: 2,
   },
+  adminRoleLabel: {
+    color: "#8A5B25",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 1,
+    marginTop: 5,
+  },
   sideMenuTitle: {
     fontSize: 22,
     fontWeight: "700",
@@ -1009,6 +1114,11 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     paddingVertical: 14,
+    paddingHorizontal: 10,
+    borderRadius: 12,
+  },
+  activeMenuItem: {
+    backgroundColor: "#F3E5D3",
   },
   menuText: {
     marginLeft: 12,
