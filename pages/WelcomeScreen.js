@@ -267,8 +267,7 @@ export default function WelcomeScreen({ navigation }) {
             </View>
 
             <View style={styles.locationCopy}>
-              <Text style={styles.locationEyebrow}>VISIT H&K</Text>
-              <Text style={styles.locationTitle}>View our location</Text>
+              <Text style={styles.locationTitle}>VISIT H&K</Text>
               <Text style={styles.locationAddress} numberOfLines={2}>
                 {HOTEL_ADDRESS}
               </Text>

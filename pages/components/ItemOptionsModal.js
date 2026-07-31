@@ -8,7 +8,9 @@ import {
   StyleSheet,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import Slider from "@react-native-community/slider";
+
+const MIN_QUANTITY = 1;
+const MAX_QUANTITY = 10;
 
 export default function ItemOptionsModal({
   visible,
@@ -22,6 +24,21 @@ export default function ItemOptionsModal({
   addingToCart,
   onConfirmAddToCart,
 }) {
+  const decreaseQuantity = () => {
+    setSelectedQty((currentQuantity) =>
+      Math.max(MIN_QUANTITY, currentQuantity - 1)
+    );
+  };
+
+  const increaseQuantity = () => {
+    setSelectedQty((currentQuantity) =>
+      Math.min(MAX_QUANTITY, currentQuantity + 1)
+    );
+  };
+
+  const isMinimumQuantity = selectedQty <= MIN_QUANTITY;
+  const isMaximumQuantity = selectedQty >= MAX_QUANTITY;
+
   return (
     <Modal
       animationType="slide"
@@ -33,7 +50,7 @@ export default function ItemOptionsModal({
         <View style={styles.optionModal}>
           <View style={styles.header}>
             <Text style={styles.title}>Customize Order</Text>
-            <TouchableOpacity onPress={onClose}>
+            <TouchableOpacity onPress={onClose} disabled={addingToCart}>
               <Ionicons name="close" size={26} color="#333" />
             </TouchableOpacity>
           </View>
@@ -58,6 +75,7 @@ export default function ItemOptionsModal({
                         active && styles.variantButtonActive,
                       ]}
                       onPress={() => setSelectedVariant(variant)}
+                      disabled={addingToCart}
                     >
                       <Text
                         style={[
@@ -80,25 +98,44 @@ export default function ItemOptionsModal({
                 })}
               </View>
 
-              <Text style={styles.optionSectionTitle}>
-                Quantity: {selectedQty}
-              </Text>
+              <Text style={styles.optionSectionTitle}>Quantity</Text>
 
-              <Slider
-                style={{ width: "100%", height: 40 }}
-                minimumValue={1}
-                maximumValue={10}
-                step={1}
-                value={selectedQty}
-                onValueChange={setSelectedQty}
-                minimumTrackTintColor="#6b4f3a"
-                maximumTrackTintColor="#d9d1ca"
-                thumbTintColor="#6b4f3a"
-              />
+              <View style={styles.quantitySection}>
+                <TouchableOpacity
+                  style={[
+                    styles.quantityButton,
+                    isMinimumQuantity && styles.quantityButtonDisabled,
+                  ]}
+                  onPress={decreaseQuantity}
+                  disabled={isMinimumQuantity || addingToCart}
+                  accessibilityRole="button"
+                  accessibilityLabel="Decrease quantity"
+                >
+                  <Ionicons
+                    name="remove"
+                    size={17}
+                    color={isMinimumQuantity ? "#b8aea6" : "#fff"}
+                  />
+                </TouchableOpacity>
 
-              <View style={styles.sliderLabels}>
-                <Text style={styles.sliderLabelText}>1</Text>
-                <Text style={styles.sliderLabelText}>10</Text>
+                <Text style={styles.quantityValue}>{selectedQty}</Text>
+
+                <TouchableOpacity
+                  style={[
+                    styles.quantityButton,
+                    isMaximumQuantity && styles.quantityButtonDisabled,
+                  ]}
+                  onPress={increaseQuantity}
+                  disabled={isMaximumQuantity || addingToCart}
+                  accessibilityRole="button"
+                  accessibilityLabel="Increase quantity"
+                >
+                  <Ionicons
+                    name="add"
+                    size={17}
+                    color={isMaximumQuantity ? "#b8aea6" : "#fff"}
+                  />
+                </TouchableOpacity>
               </View>
 
               <View style={styles.modalSummaryBox}>
@@ -106,6 +143,9 @@ export default function ItemOptionsModal({
                   Selected: {selectedVariant?.label || "Regular"}
                 </Text>
                 <Text style={styles.modalSummaryText}>
+                  Quantity: {selectedQty}
+                </Text>
+                <Text style={styles.modalSummaryTotal}>
                   Total: ₱{(selectedVariant?.price || 0) * selectedQty}
                 </Text>
               </View>
@@ -129,7 +169,9 @@ export default function ItemOptionsModal({
     </Modal>
   );
 }
+
 const CREAM = "#FFF8E7";
+
 const styles = StyleSheet.create({
   modalOverlay: {
     flex: 1,
@@ -203,20 +245,35 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
-  sliderLabels: {
+  quantitySection: {
     flexDirection: "row",
-    justifyContent: "space-between",
-    marginTop: -4,
+    alignItems: "center",
+    justifyContent: "flex-start",
   },
-  sliderLabelText: {
-    color: "#8b7e74",
-    fontSize: 12,
+  quantityButton: {
+    width: 34,
+    height: 34,
+    borderRadius: 9,
+    backgroundColor: "#6b4f3a",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  quantityButtonDisabled: {
+    backgroundColor: "#ece7e2",
+  },
+  quantityValue: {
+    minWidth: 36,
+    marginHorizontal: 4,
+    color: "#2f241d",
+    fontSize: 17,
+    fontWeight: "800",
+    textAlign: "center",
   },
   modalSummaryBox: {
     backgroundColor: "#faf7f4",
     borderRadius: 14,
     padding: 14,
-    marginTop: 14,
+    marginTop: 16,
     marginBottom: 16,
   },
   modalSummaryText: {
@@ -224,6 +281,12 @@ const styles = StyleSheet.create({
     color: "#3d2b1f",
     fontWeight: "600",
     marginBottom: 4,
+  },
+  modalSummaryTotal: {
+    fontSize: 17,
+    color: "#6b4f3a",
+    fontWeight: "900",
+    marginTop: 4,
   },
   orderButton: {
     backgroundColor: "#6b4f3a",
