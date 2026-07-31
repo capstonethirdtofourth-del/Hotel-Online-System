@@ -455,6 +455,8 @@ const styles = StyleSheet.create({
   filterRow: {
     paddingHorizontal: 16,
     paddingVertical: 10,
+    height: 55,
+    marginVertical: 10,
   },
   filterChip: {
     backgroundColor: "#ece7e2",

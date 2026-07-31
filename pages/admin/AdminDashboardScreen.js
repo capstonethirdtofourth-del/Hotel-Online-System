@@ -223,7 +223,6 @@ export default function AdminDashboardScreen({ onNavigate }) {
       showsVerticalScrollIndicator={false}
     >
       <Text style={styles.eyebrow}>ADMIN OVERVIEW</Text>
-      <Text style={styles.title}>Hotel operations at a glance</Text>
       <Text style={styles.subtitle}>
         Live room, food-order, and service-request totals.
       </Text>
