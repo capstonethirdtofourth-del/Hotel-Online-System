@@ -363,7 +363,9 @@ function MainShell({
   roomStatusRefreshKey,
 }) {
   const isAdmin = userData?.role === "admin";
-  const [activeScreen, setActiveScreen] = useState("Landing");
+  const [activeScreen, setActiveScreen] = useState(() =>
+    userData?.role === "admin" ? "AdminDashboard" : "Landing"
+  );
 
   useEffect(() => {
     if (isAdmin) {
@@ -442,6 +444,7 @@ export default function App() {
   });
 
   const [initialRoute, setInitialRoute] = useState(null);
+  const [authBootstrapping, setAuthBootstrapping] = useState(true);
   const [currentUser, setCurrentUser] = useState(null);
   const [userData, setUserData] = useState(null);
 
@@ -464,35 +467,59 @@ export default function App() {
   const [roomStatusRefreshKey, setRoomStatusRefreshKey] = useState(0);
 
   useEffect(() => {
+    let isMounted = true;
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      setCurrentUser(user);
+      if (!isMounted) return;
 
-      if (user) {
-        setInitialRoute("Main");
+      // Do not mount Main as a guest while the saved user's Firestore role
+      // is still being fetched. Keep the app on the neutral loading screen.
+      setAuthBootstrapping(true);
+      setInitialRoute(null);
 
-        try {
-          const userRef = doc(db, "users", user.uid);
-          const userSnap = await getDoc(userRef);
-
-          if (userSnap.exists()) {
-            setUserData(userSnap.data());
-          } else {
-            setUserData(null);
-            console.log("User document not found");
-          }
-        } catch (error) {
-          console.log("Error fetching user data:", error);
-        }
-      } else {
+      if (!user) {
+        setCurrentUser(null);
         setUserData(null);
         setReservedRooms([]);
         setUserOrders([]);
         setUserRequests([]);
         setInitialRoute("Welcome");
+        setAuthBootstrapping(false);
+        return;
+      }
+
+      try {
+        const userRef = doc(db, "users", user.uid);
+        const userSnap = await getDoc(userRef);
+
+        if (!isMounted) return;
+
+        if (!userSnap.exists()) {
+          throw new Error("User profile not found.");
+        }
+
+        // Set the profile before allowing NavigationContainer to mount.
+        // MainShell can now choose AdminDashboard on its first render.
+        setUserData(userSnap.data());
+        setCurrentUser(user);
+        setInitialRoute("Main");
+      } catch (error) {
+        console.log("Error fetching user data:", error);
+        Alert.alert(
+          "Account Loading Failed",
+          "Your saved account was found, but its profile could not be loaded. Please check your connection and reopen the app."
+        );
+      } finally {
+        if (isMounted) {
+          setAuthBootstrapping(false);
+        }
       }
     });
 
-    return unsubscribe;
+    return () => {
+      isMounted = false;
+      unsubscribe();
+    };
   }, []);
 
   const fetchReservedRooms = async () => {
@@ -936,7 +963,7 @@ export default function App() {
     [currentUser, userData, roomStatusRefreshKey]
   );
 
-  if (!fontsLoaded || !initialRoute) {
+  if (!fontsLoaded || authBootstrapping || !initialRoute) {
     return (
       <SafeAreaView style={styles.loadingContainer}>
         <ActivityIndicator size="large" color="#6b3200" />
