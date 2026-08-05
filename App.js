@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -26,6 +26,7 @@ import {
 } from "firebase/firestore";
 import { auth, db } from "./FirebaseConfig";
 import { useFonts } from "expo-font";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   createBookingWithNightLocks,
   releaseBookingLocksAndUpdateStatus,
@@ -42,11 +43,49 @@ import WelcomeScreen from "./pages/WelcomeScreen";
 import ReservedRoomsModal from "./AppComponent/ReservedRoomsModal";
 import InfoModal from "./AppComponent/InfoModal";
 import ActivityStatusModal from "./AppComponent/ActivityStatusModal";
+import GuestNotificationsModal from "./AppComponent/GuestNotificationsModal";
 
 import AdminRoomScreen from "./pages/admin/AdminRoomScreen";
 import AdminRequestScreen from "./pages/admin/AdminRequestScreen";
 import AdminFoodOrderScreen from "./pages/admin/AdminFoodOrderScreen";
 import AdminDashboardScreen from "./pages/admin/AdminDashboardScreen";
+
+const REQUEST_STATUS_LABELS = {
+  pending: "Pending",
+  acknowledged: "Acknowledged",
+  ongoing: "Ongoing",
+  completed: "Completed",
+  cancelled: "Cancelled",
+};
+
+function normalizeRequestStatus(status) {
+  if (status === "confirmed") return "acknowledged";
+  if (status === "fulfilled") return "completed";
+  return status || "pending";
+}
+
+function getRequestStatusLabel(status) {
+  const normalizedStatus = normalizeRequestStatus(status);
+  return (
+    REQUEST_STATUS_LABELS[normalizedStatus] ||
+    normalizedStatus.charAt(0).toUpperCase() + normalizedStatus.slice(1)
+  );
+}
+
+function getTimestampMilliseconds(value) {
+  if (!value) return 0;
+  if (typeof value.toMillis === "function") return value.toMillis();
+  if (typeof value.seconds === "number") return value.seconds * 1000;
+  if (typeof value === "number") return value;
+  return 0;
+}
+
+function getGuestNotificationStorageKeys(userId) {
+  return {
+    notifications: `hk_request_notifications_${userId}`,
+    requestStatuses: `hk_request_statuses_${userId}`,
+  };
+}
 
 const Stack = createNativeStackNavigator();
 
@@ -55,8 +94,12 @@ function MainLayout({
   currentUser,
   userData,
   onOpenStatus,
+  onOpenNotifications,
   onOpenReservedRooms,
   onOpenInfo,
+  unreadNotificationCount,
+  notificationBanner,
+  onDismissNotificationBanner,
   activeScreen,
   onChangeScreen,
   children,
@@ -114,6 +157,9 @@ function MainLayout({
             accessibilityLabel="Open navigation menu"
           >
             <Ionicons name="menu-outline" size={30} color="#fff" />
+            {!isAdmin && unreadNotificationCount > 0 ? (
+              <View style={styles.headerUnreadDot} />
+            ) : null}
           </TouchableOpacity>
 
           <Text
@@ -127,6 +173,37 @@ function MainLayout({
           </Text>
         </View>
       </View>
+
+      {!isAdmin && notificationBanner ? (
+        <View style={styles.notificationBanner}>
+          <TouchableOpacity
+            style={styles.notificationBannerMain}
+            activeOpacity={0.9}
+            onPress={onOpenNotifications}
+          >
+            <View style={styles.notificationBannerIcon}>
+              <Ionicons name="notifications" size={22} color="#FFF8E7" />
+            </View>
+
+            <View style={styles.notificationBannerTextArea}>
+              <Text style={styles.notificationBannerTitle} numberOfLines={1}>
+                {notificationBanner.title}
+              </Text>
+              <Text style={styles.notificationBannerMessage} numberOfLines={2}>
+                {notificationBanner.message}
+              </Text>
+            </View>
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.notificationBannerClose}
+            onPress={onDismissNotificationBanner}
+            accessibilityLabel="Dismiss notification banner"
+          >
+            <Ionicons name="close" size={19} color="#FFF8E7" />
+          </TouchableOpacity>
+        </View>
+      ) : null}
 
       <View style={styles.pageContent}>{children}</View>
 
@@ -294,6 +371,35 @@ function MainLayout({
                     style={styles.menuItem}
                     onPress={() => {
                       setMenuVisible(false);
+                      onOpenNotifications();
+                    }}
+                  >
+                    <View style={styles.notificationMenuIconWrap}>
+                      <Ionicons
+                        name="notifications-outline"
+                        size={22}
+                        color="#4b3a2f"
+                      />
+                      {unreadNotificationCount > 0 ? (
+                        <View style={styles.sidebarUnreadDot} />
+                      ) : null}
+                    </View>
+                    <Text style={styles.menuText}>Notifications</Text>
+                    {unreadNotificationCount > 0 ? (
+                      <View style={styles.sidebarUnreadBadge}>
+                        <Text style={styles.sidebarUnreadBadgeText}>
+                          {unreadNotificationCount > 99
+                            ? "99+"
+                            : unreadNotificationCount}
+                        </Text>
+                      </View>
+                    ) : null}
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setMenuVisible(false);
                       onOpenStatus();
                     }}
                   >
@@ -358,8 +464,12 @@ function MainShell({
   userData,
   onBookRoom,
   onOpenStatus,
+  onOpenNotifications,
   onOpenReservedRooms,
   onOpenInfo,
+  unreadNotificationCount,
+  notificationBanner,
+  onDismissNotificationBanner,
   roomStatusRefreshKey,
 }) {
   const isAdmin = userData?.role === "admin";
@@ -427,8 +537,12 @@ function MainShell({
       currentUser={currentUser}
       userData={userData}
       onOpenStatus={onOpenStatus}
+      onOpenNotifications={onOpenNotifications}
       onOpenReservedRooms={onOpenReservedRooms}
       onOpenInfo={onOpenInfo}
+      unreadNotificationCount={unreadNotificationCount}
+      notificationBanner={notificationBanner}
+      onDismissNotificationBanner={onDismissNotificationBanner}
       activeScreen={activeScreen}
       onChangeScreen={setActiveScreen}
       isAdmin={isAdmin}
@@ -441,6 +555,7 @@ function MainShell({
 export default function App() {
   const [fontsLoaded] = useFonts({
     Pacifico: require("./assets/font/pacifico.ttf"),
+    Harlow: require("./assets/font/harlowsi.ttf"),
   });
 
   const [initialRoute, setInitialRoute] = useState(null);
@@ -449,8 +564,13 @@ export default function App() {
   const [userData, setUserData] = useState(null);
 
   const [activityStatusVisible, setActivityStatusVisible] = useState(false);
+  const [guestNotificationsVisible, setGuestNotificationsVisible] = useState(false);
   const [reservedRoomsModalVisible, setReservedRoomsModalVisible] = useState(false);
   const [infoModalVisible, setInfoModalVisible] = useState(false);
+
+  const [guestNotifications, setGuestNotifications] = useState([]);
+  const [requestStatusBanner, setRequestStatusBanner] = useState(null);
+  const notificationBannerTimerRef = useRef(null);
 
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [loadingReservedRooms, setLoadingReservedRooms] = useState(false);
@@ -483,6 +603,13 @@ export default function App() {
         setReservedRooms([]);
         setUserOrders([]);
         setUserRequests([]);
+        setGuestNotifications([]);
+        setRequestStatusBanner(null);
+        setGuestNotificationsVisible(false);
+        if (notificationBannerTimerRef.current) {
+          clearTimeout(notificationBannerTimerRef.current);
+          notificationBannerTimerRef.current = null;
+        }
         setInitialRoute("Welcome");
         setAuthBootstrapping(false);
         return;
@@ -626,6 +753,249 @@ export default function App() {
       unsubscribeRequests();
     };
   }, [currentUser]);
+
+  useEffect(() => {
+    if (!currentUser || !userData || userData.role === "admin") {
+      setGuestNotifications([]);
+      setRequestStatusBanner(null);
+      setGuestNotificationsVisible(false);
+      return undefined;
+    }
+
+    const userId = currentUser.uid;
+    const storageKeys = getGuestNotificationStorageKeys(userId);
+    let unsubscribeRequests = null;
+    let cancelled = false;
+    let knownRequestStatuses = {};
+
+    const setupRequestNotifications = async () => {
+      try {
+        const storedValues = await AsyncStorage.multiGet([
+          storageKeys.notifications,
+          storageKeys.requestStatuses,
+        ]);
+
+        if (cancelled) return;
+
+        const storedNotificationsValue = storedValues[0]?.[1];
+        const storedStatusesValue = storedValues[1]?.[1];
+
+        let storedNotifications = [];
+
+        try {
+          const parsedNotifications = storedNotificationsValue
+            ? JSON.parse(storedNotificationsValue)
+            : [];
+          storedNotifications = Array.isArray(parsedNotifications)
+            ? parsedNotifications
+            : [];
+        } catch (error) {
+          console.log("Unable to read saved guest notifications:", error);
+        }
+
+        try {
+          const parsedStatuses = storedStatusesValue
+            ? JSON.parse(storedStatusesValue)
+            : {};
+          knownRequestStatuses =
+            parsedStatuses && typeof parsedStatuses === "object"
+              ? parsedStatuses
+              : {};
+        } catch (error) {
+          console.log("Unable to read saved request statuses:", error);
+          knownRequestStatuses = {};
+        }
+
+        setGuestNotifications(storedNotifications);
+
+        const requestsQuery = query(
+          collection(db, "requests"),
+          where("userId", "==", userId)
+        );
+
+        unsubscribeRequests = onSnapshot(
+          requestsQuery,
+          (snapshot) => {
+            if (cancelled) return;
+
+            const currentStatuses = {};
+            const changedNotifications = [];
+
+            snapshot.docs.forEach((requestDoc) => {
+              const request = {
+                id: requestDoc.id,
+                ...requestDoc.data(),
+              };
+
+              const currentStatus = normalizeRequestStatus(request.status);
+              const previousStatus = knownRequestStatuses[request.id];
+              currentStatuses[request.id] = currentStatus;
+
+              // A missing previous status means this is a new request or the
+              // first time this device has seen it. Seed it without alerting.
+              if (!previousStatus || previousStatus === currentStatus) {
+                return;
+              }
+
+              const statusLabel = getRequestStatusLabel(currentStatus);
+              const requestLabel = request.requestTypeLabels?.length
+                ? request.requestTypeLabels.join(", ")
+                : "service";
+              const updateTime =
+                getTimestampMilliseconds(request.updatedAt) ||
+                getTimestampMilliseconds(
+                  request.statusHistory?.[request.statusHistory.length - 1]?.at
+                ) ||
+                Date.now();
+
+              changedNotifications.push({
+                id: `${request.id}_${currentStatus}_${updateTime}`,
+                requestId: request.id,
+                title: "Request status updated",
+                message:
+                  request.statusMessage?.trim() ||
+                  `Your ${requestLabel} request is now ${statusLabel}.`,
+                status: currentStatus,
+                statusLabel,
+                requestLabel,
+                requestText: request.requestText || "",
+                createdAt: new Date(updateTime).toISOString(),
+                read: false,
+                sortTime: updateTime,
+              });
+            });
+
+            knownRequestStatuses = currentStatuses;
+
+            AsyncStorage.setItem(
+              storageKeys.requestStatuses,
+              JSON.stringify(currentStatuses)
+            ).catch((error) => {
+              console.log("Unable to save request statuses:", error);
+            });
+
+            if (changedNotifications.length === 0) return;
+
+            changedNotifications.sort((a, b) => b.sortTime - a.sortTime);
+            const cleanedNotifications = changedNotifications.map(
+              ({ sortTime, ...notification }) => notification
+            );
+
+            setGuestNotifications((currentNotifications) => {
+              const existingIds = new Set(
+                currentNotifications.map((notification) => notification.id)
+              );
+              const uniqueNewNotifications = cleanedNotifications.filter(
+                (notification) => !existingIds.has(notification.id)
+              );
+
+              if (uniqueNewNotifications.length === 0) {
+                return currentNotifications;
+              }
+
+              const updatedNotifications = [
+                ...uniqueNewNotifications,
+                ...currentNotifications,
+              ].slice(0, 50);
+
+              AsyncStorage.setItem(
+                storageKeys.notifications,
+                JSON.stringify(updatedNotifications)
+              ).catch((error) => {
+                console.log("Unable to save guest notifications:", error);
+              });
+
+              return updatedNotifications;
+            });
+
+            const newestNotification = cleanedNotifications[0];
+            setRequestStatusBanner(newestNotification);
+
+            if (notificationBannerTimerRef.current) {
+              clearTimeout(notificationBannerTimerRef.current);
+            }
+
+            notificationBannerTimerRef.current = setTimeout(() => {
+              setRequestStatusBanner(null);
+              notificationBannerTimerRef.current = null;
+            }, 5000);
+          },
+          (error) => {
+            console.log("Guest request notification listener error:", error);
+          }
+        );
+      } catch (error) {
+        console.log("Unable to start guest request notifications:", error);
+      }
+    };
+
+    setupRequestNotifications();
+
+    return () => {
+      cancelled = true;
+      if (unsubscribeRequests) unsubscribeRequests();
+      if (notificationBannerTimerRef.current) {
+        clearTimeout(notificationBannerTimerRef.current);
+        notificationBannerTimerRef.current = null;
+      }
+    };
+  }, [currentUser?.uid, userData?.role]);
+
+  const unreadNotificationCount = useMemo(
+    () =>
+      guestNotifications.filter((notification) => !notification.read).length,
+    [guestNotifications]
+  );
+
+  const dismissRequestStatusBanner = () => {
+    setRequestStatusBanner(null);
+    if (notificationBannerTimerRef.current) {
+      clearTimeout(notificationBannerTimerRef.current);
+      notificationBannerTimerRef.current = null;
+    }
+  };
+
+  const openGuestNotifications = () => {
+    dismissRequestStatusBanner();
+    setGuestNotificationsVisible(true);
+
+    if (!currentUser) return;
+
+    const storageKeys = getGuestNotificationStorageKeys(currentUser.uid);
+
+    setGuestNotifications((currentNotifications) => {
+      const hasUnread = currentNotifications.some(
+        (notification) => !notification.read
+      );
+
+      if (!hasUnread) return currentNotifications;
+
+      const readNotifications = currentNotifications.map((notification) => ({
+        ...notification,
+        read: true,
+      }));
+
+      AsyncStorage.setItem(
+        storageKeys.notifications,
+        JSON.stringify(readNotifications)
+      ).catch((error) => {
+        console.log("Unable to mark guest notifications as read:", error);
+      });
+
+      return readNotifications;
+    });
+  };
+
+  const clearGuestNotifications = () => {
+    setGuestNotifications([]);
+
+    if (!currentUser) return;
+
+    const storageKeys = getGuestNotificationStorageKeys(currentUser.uid);
+    AsyncStorage.removeItem(storageKeys.notifications).catch((error) => {
+      console.log("Unable to clear guest notifications:", error);
+    });
+  };
 
   const openActivityStatus = () => {
     setActivityStatusVisible(true);
@@ -956,11 +1326,21 @@ export default function App() {
       userData,
       onBookRoom: handleBookRoom,
       onOpenStatus: openActivityStatus,
+      onOpenNotifications: openGuestNotifications,
       onOpenReservedRooms: openReservedRoomsModal,
       onOpenInfo: () => setInfoModalVisible(true),
+      unreadNotificationCount,
+      notificationBanner: requestStatusBanner,
+      onDismissNotificationBanner: dismissRequestStatusBanner,
       roomStatusRefreshKey,
     }),
-    [currentUser, userData, roomStatusRefreshKey]
+    [
+      currentUser,
+      userData,
+      unreadNotificationCount,
+      requestStatusBanner,
+      roomStatusRefreshKey,
+    ]
   );
 
   if (!fontsLoaded || authBootstrapping || !initialRoute) {
@@ -983,6 +1363,13 @@ export default function App() {
           </Stack.Screen>
         </Stack.Navigator>
       </NavigationContainer>
+
+      <GuestNotificationsModal
+        visible={guestNotificationsVisible}
+        notifications={guestNotifications}
+        onClose={() => setGuestNotificationsVisible(false)}
+        onClear={clearGuestNotifications}
+      />
 
       <ActivityStatusModal
         visible={activityStatusVisible}
@@ -1044,6 +1431,72 @@ const styles = StyleSheet.create({
     height: 38,
     alignItems: "center",
     justifyContent: "center",
+    position: "relative",
+  },
+  headerUnreadDot: {
+    position: "absolute",
+    top: 1,
+    right: 0,
+    width: 11,
+    height: 11,
+    borderRadius: 6,
+    backgroundColor: "#E53935",
+    borderWidth: 2,
+    borderColor: SECONDARY,
+  },
+  notificationBanner: {
+    position: "absolute",
+    top: 76,
+    left: 12,
+    right: 12,
+    zIndex: 30,
+    elevation: 14,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#6B3200",
+    borderRadius: 16,
+    borderWidth: 1,
+    borderColor: "#D8B26A",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 4 },
+  },
+  notificationBannerMain: {
+    flex: 1,
+    flexDirection: "row",
+    alignItems: "center",
+    paddingVertical: 12,
+    paddingLeft: 12,
+  },
+  notificationBannerIcon: {
+    width: 38,
+    height: 38,
+    borderRadius: 12,
+    backgroundColor: "#351706",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  notificationBannerTextArea: {
+    flex: 1,
+    marginLeft: 10,
+  },
+  notificationBannerTitle: {
+    color: "#FFF8E7",
+    fontSize: 14,
+    fontWeight: "800",
+  },
+  notificationBannerMessage: {
+    color: "#F4DFC4",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
+  },
+  notificationBannerClose: {
+    width: 42,
+    alignSelf: "stretch",
+    alignItems: "center",
+    justifyContent: "center",
   },
   headerTitle: {
     color: "#ffffff",
@@ -1053,9 +1506,9 @@ const styles = StyleSheet.create({
     marginLeft: 8,
   },
   adminHeaderTitle: {
-    fontFamily: "Roboto",
-    fontSize: 20,
-    fontWeight: "800",
+    fontFamily: "Harlow",
+    fontSize: 24,
+    letterSpacing: 0.2,
   },
   pageContent: {
     flex: 1,
@@ -1158,6 +1611,37 @@ const styles = StyleSheet.create({
   },
   disabledMenuText: {
     color: "#9ca3af",
+  },
+  notificationMenuIconWrap: {
+    width: 22,
+    height: 22,
+    position: "relative",
+  },
+  sidebarUnreadDot: {
+    position: "absolute",
+    top: -3,
+    right: -4,
+    width: 9,
+    height: 9,
+    borderRadius: 5,
+    backgroundColor: "#E53935",
+    borderWidth: 1.5,
+    borderColor: "#FFFFFF",
+  },
+  sidebarUnreadBadge: {
+    minWidth: 22,
+    height: 22,
+    borderRadius: 11,
+    backgroundColor: "#E53935",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 6,
+    marginLeft: "auto",
+  },
+  sidebarUnreadBadgeText: {
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontWeight: "900",
   },
   menuDivider: {
     height: 1,

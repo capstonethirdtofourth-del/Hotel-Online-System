@@ -1,6 +1,7 @@
 import React, { useEffect, useMemo, useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -54,7 +55,16 @@ function DashboardCard({
         </View>
 
         <View style={styles.cardHeading}>
-          <Text style={styles.cardTitle}>{title}</Text>
+          <Text
+            style={{
+              color: DEEP_BROWN,
+              fontSize: 18,
+              fontFamily: Platform.OS === "android" ? "sans-serif" : undefined,
+              fontWeight: "bold",
+            }}
+          >
+            {title}
+          </Text>
           <Text style={styles.cardDescription}>{description}</Text>
         </View>
 
@@ -466,11 +476,6 @@ const styles = StyleSheet.create({
   cardHeading: {
     flex: 1,
     marginHorizontal: 11,
-  },
-  cardTitle: {
-    color: DEEP_BROWN,
-    fontSize: 17,
-    fontWeight: "900",
   },
   cardDescription: {
     color: MUTED,

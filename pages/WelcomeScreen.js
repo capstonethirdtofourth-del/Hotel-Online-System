@@ -19,7 +19,7 @@ import LocationMapModal, {
   HOTEL_MAP_EMBED_URL,
 } from "./components/LocationMapModal";
 
-const STAY_POSTER = require("../assets/images/welcome-stay.png");
+const STAY_POSTER = require("../assets/images/welcome-stay_v2.png");
 const FOOD_POSTER = require("../assets/images/welcome-food.png");
 const MAP_PREVIEW = require("../assets/images/location-preview.png");
 
@@ -493,6 +493,7 @@ const styles = StyleSheet.create({
   },
   mapPreview: {
     flex: 1,
+    width: 120,
     backgroundColor: "#DED8CF",
   },
   mapPreviewShade: {
