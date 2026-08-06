@@ -9,6 +9,7 @@ import {
   Modal,
   Alert,
   ActivityIndicator,
+  useWindowDimensions,
 } from "react-native";
 import {
   collection,
@@ -26,7 +27,82 @@ import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import BookingDetailsModal from "./components/BookingDetailsModal";
 import Room360Modal from "./components/Room360Modal";
 
+const SHARED_ROOM_IMAGES = [
+  {
+    key: "shared-room-1",
+    source: require("../assets/images/room-gallery/room-1.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+  {
+    key: "shared-room-2",
+    source: require("../assets/images/room-gallery/room-2.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+  {
+    key: "shared-room-3",
+    source: require("../assets/images/room-gallery/room-3.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+  {
+    key: "shared-room-4",
+    source: require("../assets/images/room-gallery/room-4.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+  {
+    key: "shared-room-5",
+    source: require("../assets/images/room-gallery/room-5.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+  {
+    key: "shared-room-6",
+    source: require("../assets/images/room-gallery/room-6.jpg"),
+    label: "Room",
+    resizeMode: "contain",
+  },
+];
+
+const SHARED_RESTROOM_IMAGES = [
+  {
+    key: "restroom-1",
+    source: require("../assets/images/restroom/restroom-1.jpg"),
+    label: "Bathroom",
+    resizeMode: "contain",
+  },
+  {
+    key: "restroom-2",
+    source: require("../assets/images/restroom/restroom-2.jpg"),
+    label: "Bathroom",
+    resizeMode: "contain",
+  },
+  {
+    key: "restroom-3",
+    source: require("../assets/images/restroom/restroom-3.jpg"),
+    label: "Bathroom",
+    resizeMode: "contain",
+  },
+  {
+    key: "restroom-4",
+    source: require("../assets/images/restroom/restroom-4.jpg"),
+    label: "Bathroom",
+    resizeMode: "contain",
+  },
+  {
+    key: "restroom-5",
+    source: require("../assets/images/restroom/restroom-5.jpg"),
+    label: "Bathroom",
+    resizeMode: "contain",
+  },
+];
+
 export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
+  const { width: windowWidth } = useWindowDimensions();
+  const galleryWidth = Math.max(windowWidth - 36, 1);
+
   const [rooms, setRooms] = useState([]);
   const [loadingRooms, setLoadingRooms] = useState(true);
   const [selectedRoom, setSelectedRoom] = useState(null);
@@ -36,6 +112,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [roomForBooking, setRoomForBooking] = useState(null);
   const [room360Visible, setRoom360Visible] = useState(false);
   const [roomFor360, setRoomFor360] = useState(null);
+  const [galleryIndex, setGalleryIndex] = useState(0);
 
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
@@ -128,12 +205,14 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   };
 
   const openRoomModal = (room) => {
+    setGalleryIndex(0);
     setSelectedRoom(room);
     fetchUserRoomRating(room.id);
   };
 
   const closeRoomModal = () => {
     setSelectedRoom(null);
+    setGalleryIndex(0);
     setRatingModalVisible(false);
     setSelectedRating(0);
     setUserRoomRating(null);
@@ -323,6 +402,40 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     setRoomFor360(null);
   };
 
+  const getRoomGallery = (room) => {
+    const gallery = [];
+    const seenUrls = new Set();
+
+    const addRemoteImage = (url, key, label = "Room") => {
+      if (typeof url !== "string") return;
+
+      const cleanUrl = url.trim();
+      if (!cleanUrl || seenUrls.has(cleanUrl)) return;
+
+      seenUrls.add(cleanUrl);
+      gallery.push({
+        key,
+        source: { uri: cleanUrl },
+        label,
+        resizeMode: "cover",
+      });
+    };
+
+    addRemoteImage(room?.image, "room-main", "Room");
+
+    if (Array.isArray(room?.galleryImages)) {
+      room.galleryImages.forEach((url, index) => {
+        addRemoteImage(url, `room-gallery-${index}`, "Room");
+      });
+    }
+
+    return [
+      ...gallery,
+      ...SHARED_ROOM_IMAGES,
+      ...SHARED_RESTROOM_IMAGES,
+    ];
+  };
+
   const renderAmenityIcon = (item) => {
     switch (item) {
       case "wifi":
@@ -396,6 +509,9 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
   const featuredRoom = rooms[0];
   const selectedRoomBadge = getRoomBadge(selectedRoom?.id);
+  const selectedRoomGallery = selectedRoom
+    ? getRoomGallery(selectedRoom)
+    : [];
 
   if (loadingRooms) {
     return (
@@ -508,10 +624,76 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
 
             {selectedRoom && (
               <ScrollView showsVerticalScrollIndicator={false}>
-                <Image
-                  source={{ uri: selectedRoom.image }}
-                  style={styles.modalImage}
-                />
+                <View style={styles.galleryContainer}>
+                  <ScrollView
+                    horizontal
+                    pagingEnabled
+                    nestedScrollEnabled
+                    showsHorizontalScrollIndicator={false}
+                    decelerationRate="fast"
+                    onMomentumScrollEnd={(event) => {
+                      const nextIndex = Math.round(
+                        event.nativeEvent.contentOffset.x / galleryWidth
+                      );
+
+                      setGalleryIndex(
+                        Math.max(
+                          0,
+                          Math.min(nextIndex, selectedRoomGallery.length - 1)
+                        )
+                      );
+                    }}
+                  >
+                    {selectedRoomGallery.map((photo) => (
+                      <View
+                        key={photo.key}
+                        style={[styles.gallerySlide, { width: galleryWidth }]}
+                      >
+                        <Image
+                          source={photo.source}
+                          style={styles.galleryImage}
+                          resizeMode={photo.resizeMode}
+                        />
+
+                        <View style={styles.galleryTypeBadge}>
+                          <Text style={styles.galleryTypeText}>
+                            {photo.label}
+                          </Text>
+                        </View>
+                      </View>
+                    ))}
+                  </ScrollView>
+
+                  <View style={styles.galleryFooter}>
+                    <View style={styles.galleryHintRow}>
+                      <Ionicons
+                        name="swap-horizontal-outline"
+                        size={16}
+                        color="#6b3200"
+                      />
+                      <Text style={styles.galleryHintText}>
+                        Swipe to view more photos
+                      </Text>
+                    </View>
+
+                    <Text style={styles.galleryCount}>
+                      {Math.min(galleryIndex + 1, selectedRoomGallery.length)} /{" "}
+                      {selectedRoomGallery.length}
+                    </Text>
+                  </View>
+
+                  <View style={styles.galleryDots}>
+                    {selectedRoomGallery.map((photo, index) => (
+                      <View
+                        key={`dot-${photo.key}`}
+                        style={[
+                          styles.galleryDot,
+                          index === galleryIndex && styles.galleryDotActive,
+                        ]}
+                      />
+                    ))}
+                  </View>
+                </View>
 
                 {!!selectedRoom.panoramaUrl && (
                   <TouchableOpacity
@@ -866,11 +1048,72 @@ const styles = StyleSheet.create({
     fontWeight: "800",
     color: "#2f241d",
   },
-  modalImage: {
-    width: "100%",
-    height: 220,
-    borderRadius: 16,
+  galleryContainer: {
     marginBottom: 14,
+  },
+  gallerySlide: {
+    height: 240,
+    borderRadius: 16,
+    overflow: "hidden",
+    backgroundColor: "#25170F",
+  },
+  galleryImage: {
+    width: "100%",
+    height: "100%",
+  },
+  galleryTypeBadge: {
+    position: "absolute",
+    top: 10,
+    left: 10,
+    backgroundColor: "rgba(53, 23, 6, 0.82)",
+    borderRadius: 12,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+  },
+  galleryTypeText: {
+    color: "#FFF8E7",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  galleryFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 8,
+  },
+  galleryHintRow: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  galleryHintText: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "700",
+    marginLeft: 5,
+  },
+  galleryCount: {
+    color: "#7a6d63",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  galleryDots: {
+    flexDirection: "row",
+    justifyContent: "center",
+    alignItems: "center",
+    flexWrap: "wrap",
+    marginTop: 8,
+  },
+  galleryDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#D7C4AC",
+    marginHorizontal: 3,
+    marginVertical: 2,
+  },
+  galleryDotActive: {
+    width: 18,
+    backgroundColor: "#6b3200",
   },
   preview360Button: {
     backgroundColor: PRIMARY,
