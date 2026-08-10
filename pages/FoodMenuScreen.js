@@ -47,6 +47,7 @@ export default function FoodMenuScreen() {
   const [selectedItem, setSelectedItem] = useState(null);
   const [selectedVariant, setSelectedVariant] = useState(null);
   const [selectedQty, setSelectedQty] = useState(1);
+  const [selectedPreferences, setSelectedPreferences] = useState("");
   const [addingToCart, setAddingToCart] = useState(false);
   const [placingOrder, setPlacingOrder] = useState(false);
   const [imagePreviewVisible, setImagePreviewVisible] = useState(false);
@@ -209,13 +210,14 @@ export default function FoodMenuScreen() {
     setSelectedItem(item);
     setSelectedVariant(variants.length > 0 ? variants[0] : null);
     setSelectedQty(1);
+    setSelectedPreferences("");
     setItemModalVisible(true);
   };
 
 
 
 
-  const addToCart = async (item, variant, quantity) => {
+  const addToCart = async (item, variant, quantity, preferences = "") => {
     const user = auth.currentUser;
 
     if (!user) {
@@ -230,7 +232,16 @@ export default function FoodMenuScreen() {
     };
 
     const finalQty = quantity || 1;
-    const cartKey = `${item.localId}-${finalVariant.key}`;
+    const cleanPreferences = String(preferences || "").trim().slice(0, 200);
+    const preferenceKey = cleanPreferences
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+    // Same food/variant with different preparation notes must stay as
+    // separate cart lines so the kitchen knows which item gets which note.
+    const cartKey = `${item.localId}-${finalVariant.key}-${
+      preferenceKey || "no-preference"
+    }`;
 
     try {
       const cartRef = collection(db, "users", user.uid, "cartItems");
@@ -243,6 +254,7 @@ export default function FoodMenuScreen() {
 
         await updateDoc(existingDoc.ref, {
           quantity: existingData.quantity + finalQty,
+          preferences: cleanPreferences,
           updatedAt: serverTimestamp(),
         });
       } else {
@@ -255,6 +267,7 @@ export default function FoodMenuScreen() {
           variantLabel: finalVariant.label,
           price: finalVariant.price,
           quantity: finalQty,
+          preferences: cleanPreferences,
           createdAt: serverTimestamp(),
           updatedAt: serverTimestamp(),
         });
@@ -275,7 +288,12 @@ export default function FoodMenuScreen() {
     try {
       setAddingToCart(true);
 
-      const added = await addToCart(selectedItem, selectedVariant, selectedQty);
+      const added = await addToCart(
+        selectedItem,
+        selectedVariant,
+        selectedQty,
+        selectedPreferences
+      );
 
       if (!added) return;
 
@@ -283,6 +301,7 @@ export default function FoodMenuScreen() {
       setSelectedItem(null);
       setSelectedVariant(null);
       setSelectedQty(1);
+      setSelectedPreferences("");
     } finally {
       setAddingToCart(false);
     }
@@ -379,6 +398,100 @@ export default function FoodMenuScreen() {
     }
   };
 
+  const updateCartPreferences = async (cartItem, nextPreferences) => {
+    const user = auth.currentUser;
+
+    if (!user || !cartItem?.id) {
+      Alert.alert("Error", "Unable to update this cart item.");
+      return false;
+    }
+
+    const cleanPreferences = String(nextPreferences || "")
+      .trim()
+      .slice(0, 200);
+
+    const preferenceKey = cleanPreferences
+      .toLowerCase()
+      .replace(/\s+/g, " ");
+
+    const variantKey = cartItem.variantKey || "default";
+    const newCartKey = `${cartItem.localId}-${variantKey}-${
+      preferenceKey || "no-preference"
+    }`;
+
+    const oldCartItem = { ...cartItem };
+
+    // Optimistic update so the cart feels immediate.
+    setCart((current) =>
+      current.map((item) =>
+        item.id === cartItem.id
+          ? {
+              ...item,
+              preferences: cleanPreferences,
+              cartKey: newCartKey,
+            }
+          : item
+      )
+    );
+
+    try {
+      const cartRef = collection(db, "users", user.uid, "cartItems");
+
+      // If another identical food/variant already has this exact preference,
+      // merge both lines instead of leaving duplicate cart keys.
+      const matchingSnapshot = await getDocs(
+        query(cartRef, where("cartKey", "==", newCartKey))
+      );
+
+      const matchingDoc = matchingSnapshot.docs.find(
+        (docSnap) => docSnap.id !== cartItem.id
+      );
+
+      if (matchingDoc) {
+        const matchingData = matchingDoc.data();
+        const batch = writeBatch(db);
+
+        batch.update(matchingDoc.ref, {
+          quantity:
+            Number(matchingData.quantity || 0) +
+            Number(cartItem.quantity || 0),
+          preferences: cleanPreferences,
+          updatedAt: serverTimestamp(),
+        });
+
+        batch.delete(
+          doc(db, "users", user.uid, "cartItems", cartItem.id)
+        );
+
+        await batch.commit();
+      } else {
+        await updateDoc(
+          doc(db, "users", user.uid, "cartItems", cartItem.id),
+          {
+            preferences: cleanPreferences,
+            cartKey: newCartKey,
+            updatedAt: serverTimestamp(),
+          }
+        );
+      }
+
+      await fetchUserCart();
+      return true;
+    } catch (error) {
+      console.log("Error updating food preferences:", error);
+
+      // Roll back the optimistic update.
+      setCart((current) =>
+        current.map((item) =>
+          item.id === oldCartItem.id ? oldCartItem : item
+        )
+      );
+
+      Alert.alert("Error", "Failed to update food preferences.");
+      return false;
+    }
+  };
+
   const cartTotal = useMemo(() => {
     return cart.reduce((sum, item) => sum + item.price * item.quantity, 0);
   }, [cart]);
@@ -441,6 +554,7 @@ export default function FoodMenuScreen() {
         variantLabel: item.variantLabel || "",
         price: item.price,
         quantity: item.quantity,
+        preferences: item.preferences || "",
         subtotal: item.price * item.quantity,
       }));
 
@@ -650,12 +764,18 @@ export default function FoodMenuScreen() {
       
       <ItemOptionsModal
         visible={itemModalVisible}
-        onClose={() => setItemModalVisible(false)}
+        onClose={() => {
+          if (addingToCart) return;
+          setItemModalVisible(false);
+          setSelectedPreferences("");
+        }}
         selectedItem={selectedItem}
         selectedVariant={selectedVariant}
         setSelectedVariant={setSelectedVariant}
         selectedQty={selectedQty}
         setSelectedQty={setSelectedQty}
+        preferences={selectedPreferences}
+        setPreferences={setSelectedPreferences}
         getItemVariants={getItemVariants}
         addingToCart={addingToCart}
         onConfirmAddToCart={confirmAddToCart}
@@ -668,6 +788,7 @@ export default function FoodMenuScreen() {
         cartTotal={cartTotal}
         onDecreaseQty={decreaseQty}
         onIncreaseQty={increaseQty}
+        onUpdatePreferences={updateCartPreferences}
         onPlaceOrder={placeOrder}
         placingOrder={placingOrder}
         styles={styles}

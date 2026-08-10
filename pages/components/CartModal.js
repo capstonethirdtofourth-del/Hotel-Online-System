@@ -1,10 +1,13 @@
+import { useEffect, useState } from "react";
 import {
   View,
   Text,
   Modal,
   ScrollView,
   TouchableOpacity,
-  StyleSheet
+  StyleSheet,
+  TextInput,
+  ActivityIndicator,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -15,9 +18,52 @@ export default function CartModal({
   cartTotal,
   onDecreaseQty,
   onIncreaseQty,
+  onUpdatePreferences,
   onPlaceOrder,
   placingOrder,
 }) {
+  const [editingItemId, setEditingItemId] = useState(null);
+  const [preferenceDraft, setPreferenceDraft] = useState("");
+  const [savingPreferenceId, setSavingPreferenceId] = useState(null);
+
+  useEffect(() => {
+    if (!visible) {
+      setEditingItemId(null);
+      setPreferenceDraft("");
+      setSavingPreferenceId(null);
+    }
+  }, [visible]);
+
+  const startEditingPreference = (item) => {
+    if (placingOrder || savingPreferenceId) return;
+
+    setEditingItemId(item.id);
+    setPreferenceDraft(item.preferences || "");
+  };
+
+  const cancelEditingPreference = () => {
+    if (savingPreferenceId) return;
+
+    setEditingItemId(null);
+    setPreferenceDraft("");
+  };
+
+  const savePreference = async (item) => {
+    if (!onUpdatePreferences || savingPreferenceId) return;
+
+    try {
+      setSavingPreferenceId(item.id);
+
+      const saved = await onUpdatePreferences(item, preferenceDraft);
+
+      if (saved !== false) {
+        setEditingItemId(null);
+        setPreferenceDraft("");
+      }
+    } finally {
+      setSavingPreferenceId(null);
+    }
+  };
   return (
     <Modal
       animationType="slide"
@@ -34,7 +80,10 @@ export default function CartModal({
             </TouchableOpacity>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+          >
             {cart.length === 0 ? (
               <Text style={styles.emptyCartText}>Your cart is empty.</Text>
             ) : (
@@ -46,6 +95,97 @@ export default function CartModal({
                       <Text style={styles.cartItemVariant}>{item.variantLabel}</Text>
                     )}
                     <Text style={styles.cartItemCategory}>{item.categoryTitle}</Text>
+
+                    {editingItemId === item.id ? (
+                      <View style={styles.preferenceEditor}>
+                        <Text style={styles.preferenceEditorLabel}>
+                          Food Preferences
+                        </Text>
+
+                        <TextInput
+                          style={styles.preferenceInput}
+                          value={preferenceDraft}
+                          onChangeText={setPreferenceDraft}
+                          placeholder="e.g. More sauce, no onions..."
+                          placeholderTextColor="#9b8d82"
+                          multiline
+                          maxLength={200}
+                          textAlignVertical="top"
+                          editable={savingPreferenceId !== item.id}
+                        />
+
+                        <View style={styles.preferenceEditorFooter}>
+                          <Text style={styles.preferenceCount}>
+                            {preferenceDraft.length}/200
+                          </Text>
+
+                          <View style={styles.preferenceEditorActions}>
+                            <TouchableOpacity
+                              style={styles.preferenceCancelButton}
+                              onPress={cancelEditingPreference}
+                              disabled={savingPreferenceId === item.id}
+                            >
+                              <Text style={styles.preferenceCancelText}>
+                                Cancel
+                              </Text>
+                            </TouchableOpacity>
+
+                            <TouchableOpacity
+                              style={[
+                                styles.preferenceSaveButton,
+                                savingPreferenceId === item.id &&
+                                  styles.preferenceSaveButtonDisabled,
+                              ]}
+                              onPress={() => savePreference(item)}
+                              disabled={savingPreferenceId === item.id}
+                            >
+                              {savingPreferenceId === item.id ? (
+                                <ActivityIndicator size="small" color="#fff" />
+                              ) : (
+                                <Text style={styles.preferenceSaveText}>
+                                  Save
+                                </Text>
+                              )}
+                            </TouchableOpacity>
+                          </View>
+                        </View>
+                      </View>
+                    ) : (
+                      <View style={styles.preferenceRow}>
+                        {item.preferences ? (
+                          <View style={styles.preferenceBox}>
+                            <Ionicons
+                              name="create-outline"
+                              size={13}
+                              color="#6b4f3a"
+                            />
+                            <Text style={styles.preferenceText}>
+                              {item.preferences}
+                            </Text>
+                          </View>
+                        ) : (
+                          <Text style={styles.noPreferenceText}>
+                            No food preferences
+                          </Text>
+                        )}
+
+                        <TouchableOpacity
+                          style={styles.editPreferenceButton}
+                          onPress={() => startEditingPreference(item)}
+                          disabled={placingOrder || !!savingPreferenceId}
+                        >
+                          <Ionicons
+                            name="pencil-outline"
+                            size={13}
+                            color="#6b3200"
+                          />
+                          <Text style={styles.editPreferenceText}>
+                            {item.preferences ? "Edit" : "Add note"}
+                          </Text>
+                        </TouchableOpacity>
+                      </View>
+                    )}
+
                     <Text style={styles.cartItemPrice}>₱{item.price}</Text>
                   </View>
 
@@ -53,6 +193,11 @@ export default function CartModal({
                     <TouchableOpacity
                       style={styles.qtyBtn}
                       onPress={() => onDecreaseQty(item)}
+                      disabled={
+                        placingOrder ||
+                        savingPreferenceId === item.id ||
+                        editingItemId === item.id
+                      }
                     >
                       <Text style={styles.qtyBtnText}>-</Text>
                     </TouchableOpacity>
@@ -62,6 +207,11 @@ export default function CartModal({
                     <TouchableOpacity
                       style={styles.qtyBtn}
                       onPress={() => onIncreaseQty(item)}
+                      disabled={
+                        placingOrder ||
+                        savingPreferenceId === item.id ||
+                        editingItemId === item.id
+                      }
                     >
                       <Text style={styles.qtyBtnText}>+</Text>
                     </TouchableOpacity>
@@ -76,10 +226,14 @@ export default function CartModal({
             <TouchableOpacity
               style={[styles.orderButton, placingOrder && styles.disabledButton]}
               onPress={onPlaceOrder}
-              disabled={placingOrder}
+              disabled={placingOrder || !!editingItemId || !!savingPreferenceId}
             >
               <Text style={styles.orderButtonText}>
-                {placingOrder ? "Placing Order..." : "Place Order"}
+                {placingOrder
+                  ? "Placing Order..."
+                  : editingItemId
+                  ? "Save or cancel your note first"
+                  : "Place Order"}
               </Text>
             </TouchableOpacity>
           </View>
@@ -139,6 +293,127 @@ const styles = StyleSheet.create({
   cartItemCategory: {
     fontSize: 12,
     color: "#8b7e74",
+  },
+
+  preferenceRow: {
+    marginTop: 6,
+    marginRight: 8,
+  },
+
+  noPreferenceText: {
+    color: "#9b8d82",
+    fontSize: 12,
+    fontStyle: "italic",
+  },
+
+  editPreferenceButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    marginTop: 5,
+    paddingVertical: 3,
+  },
+
+  editPreferenceText: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 4,
+  },
+
+  preferenceEditor: {
+    backgroundColor: "#f7efe6",
+    borderRadius: 10,
+    padding: 9,
+    marginTop: 7,
+    marginRight: 8,
+  },
+
+  preferenceEditorLabel: {
+    color: "#6b3200",
+    fontSize: 12,
+    fontWeight: "800",
+    marginBottom: 6,
+  },
+
+  preferenceInput: {
+    minHeight: 72,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#d9cfc6",
+    borderRadius: 9,
+    paddingHorizontal: 9,
+    paddingVertical: 8,
+    color: "#2f241d",
+    fontSize: 13,
+  },
+
+  preferenceEditorFooter: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 7,
+  },
+
+  preferenceCount: {
+    color: "#8b7e74",
+    fontSize: 10,
+  },
+
+  preferenceEditorActions: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+
+  preferenceCancelButton: {
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    marginRight: 6,
+  },
+
+  preferenceCancelText: {
+    color: "#6b4f3a",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+
+  preferenceSaveButton: {
+    minWidth: 58,
+    minHeight: 32,
+    borderRadius: 8,
+    backgroundColor: "#6b3200",
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 11,
+  },
+
+  preferenceSaveButtonDisabled: {
+    opacity: 0.6,
+  },
+
+  preferenceSaveText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+
+  preferenceBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#f7efe6",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    marginTop: 6,
+    marginRight: 8,
+  },
+
+  preferenceText: {
+    flex: 1,
+    color: "#6b4f3a",
+    fontSize: 12,
+    lineHeight: 16,
+    marginLeft: 5,
   },
 
   cartItemPrice: {

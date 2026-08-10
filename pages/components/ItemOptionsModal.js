@@ -6,6 +6,7 @@ import {
   ScrollView,
   TouchableOpacity,
   StyleSheet,
+  TextInput,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
@@ -20,6 +21,8 @@ export default function ItemOptionsModal({
   setSelectedVariant,
   selectedQty,
   setSelectedQty,
+  preferences,
+  setPreferences,
   getItemVariants,
   addingToCart,
   onConfirmAddToCart,
@@ -136,6 +139,32 @@ export default function ItemOptionsModal({
                     color={isMaximumQuantity ? "#b8aea6" : "#fff"}
                   />
                 </TouchableOpacity>
+              </View>
+
+              <Text style={styles.optionSectionTitle}>
+                Food Preferences
+                <Text style={styles.optionalText}> (optional)</Text>
+              </Text>
+
+              <TextInput
+                style={styles.preferencesInput}
+                value={preferences}
+                onChangeText={setPreferences}
+                placeholder="e.g. More sauce, no onions, less spicy..."
+                placeholderTextColor="#9b8d82"
+                multiline
+                maxLength={200}
+                textAlignVertical="top"
+                editable={!addingToCart}
+              />
+
+              <View style={styles.preferencesFooter}>
+                <Text style={styles.preferencesHint}>
+                  Add preparation notes for this item.
+                </Text>
+                <Text style={styles.preferencesCount}>
+                  {(preferences || "").length}/200
+                </Text>
               </View>
 
               <View style={styles.modalSummaryBox}>
@@ -268,6 +297,38 @@ const styles = StyleSheet.create({
     fontSize: 17,
     fontWeight: "800",
     textAlign: "center",
+  },
+  optionalText: {
+    fontSize: 13,
+    fontWeight: "500",
+    color: "#8b7e74",
+  },
+  preferencesInput: {
+    minHeight: 90,
+    backgroundColor: "#fff",
+    borderWidth: 1,
+    borderColor: "#d9cfc6",
+    borderRadius: 12,
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    color: "#2f241d",
+    fontSize: 14,
+  },
+  preferencesFooter: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginTop: 5,
+  },
+  preferencesHint: {
+    color: "#8b7e74",
+    fontSize: 11,
+    flex: 1,
+    marginRight: 8,
+  },
+  preferencesCount: {
+    color: "#8b7e74",
+    fontSize: 11,
   },
   modalSummaryBox: {
     backgroundColor: "#faf7f4",

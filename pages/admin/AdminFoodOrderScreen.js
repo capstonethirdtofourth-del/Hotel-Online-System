@@ -264,10 +264,18 @@ export default function AdminFoodOrderScreen() {
 
                 <View style={styles.itemList}>
                   {(order.items || []).slice(0, 3).map((item, index) => (
-                    <Text key={`${item.name}-${index}`} style={styles.itemText}>
-                      {item.quantity || 1}× {item.name}
-                      {item.variantLabel ? ` (${item.variantLabel})` : ""}
-                    </Text>
+                    <View key={`${item.name}-${index}`} style={styles.orderItemLine}>
+                      <Text style={styles.itemText}>
+                        {item.quantity || 1}× {item.name}
+                        {item.variantLabel ? ` (${item.variantLabel})` : ""}
+                      </Text>
+
+                      {!!item.preferences && (
+                        <Text style={styles.itemPreferenceText}>
+                          Note: {item.preferences}
+                        </Text>
+                      )}
+                    </View>
                   ))}
                   {(order.items || []).length > 3 ? (
                     <Text style={styles.moreText}>
@@ -320,6 +328,43 @@ export default function AdminFoodOrderScreen() {
                   <Text style={styles.infoText}>
                     Total: ₱{Number(selectedOrder.total || 0).toLocaleString("en-PH")}
                   </Text>
+                </View>
+
+                <Text style={styles.sectionTitle}>Order Items</Text>
+                <View style={styles.modalItemsBox}>
+                  {(selectedOrder.items || []).map((item, index) => (
+                    <View
+                      key={`${item.name}-${index}`}
+                      style={[
+                        styles.modalOrderItem,
+                        index < (selectedOrder.items || []).length - 1 &&
+                          styles.modalOrderItemBorder,
+                      ]}
+                    >
+                      <Text style={styles.modalOrderItemName}>
+                        {item.quantity || 1}× {item.name}
+                        {item.variantLabel ? ` (${item.variantLabel})` : ""}
+                      </Text>
+
+                      {!!item.preferences && (
+                        <View style={styles.modalPreferenceBox}>
+                          <Ionicons
+                            name="restaurant-outline"
+                            size={15}
+                            color="#8b5e34"
+                          />
+                          <View style={{ flex: 1, marginLeft: 7 }}>
+                            <Text style={styles.modalPreferenceLabel}>
+                              Guest preference
+                            </Text>
+                            <Text style={styles.modalPreferenceText}>
+                              {item.preferences}
+                            </Text>
+                          </View>
+                        </View>
+                      )}
+                    </View>
+                  ))}
                 </View>
 
                 <StatusTimeline type="orders" status={selectedOrder.status || "pending"} />
@@ -500,6 +545,17 @@ const styles = StyleSheet.create({
     color: "#51473f",
     marginBottom: 3,
   },
+  orderItemLine: {
+    marginBottom: 5,
+  },
+  itemPreferenceText: {
+    color: "#8b5e34",
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: 2,
+    paddingLeft: 12,
+    fontWeight: "600",
+  },
   moreText: {
     fontSize: 11,
     color: "#8b7e74",
@@ -577,6 +633,44 @@ const styles = StyleSheet.create({
     color: "#51473f",
     fontSize: 13,
     marginBottom: 4,
+  },
+  modalItemsBox: {
+    backgroundColor: "#fff",
+    borderRadius: 14,
+    paddingHorizontal: 12,
+  },
+  modalOrderItem: {
+    paddingVertical: 11,
+  },
+  modalOrderItemBorder: {
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: "#e6d9cc",
+  },
+  modalOrderItemName: {
+    color: "#3d2b1f",
+    fontSize: 13,
+    fontWeight: "800",
+  },
+  modalPreferenceBox: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    backgroundColor: "#fff7ec",
+    borderRadius: 10,
+    padding: 9,
+    marginTop: 7,
+  },
+  modalPreferenceLabel: {
+    color: "#8b5e34",
+    fontSize: 10,
+    fontWeight: "900",
+    textTransform: "uppercase",
+    letterSpacing: 0.5,
+  },
+  modalPreferenceText: {
+    color: "#51473f",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 2,
   },
   sectionTitle: {
     fontSize: 15,
