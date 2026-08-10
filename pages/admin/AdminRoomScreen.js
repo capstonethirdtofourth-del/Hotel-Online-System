@@ -13,9 +13,7 @@ import {
 } from "react-native";
 import {
   collection,
-  getDocs,
-  query,
-  where,
+  onSnapshot,
   doc,
   addDoc,
   updateDoc,
@@ -51,42 +49,86 @@ export default function AdminRoomScreen() {
   const isCheckingOut = processingAction === "checkout";
 
   useEffect(() => {
-    loadData();
+    setLoading(true);
+
+    let roomsReady = false;
+    let bookingsReady = false;
+
+    const finishInitialLoad = () => {
+      if (roomsReady && bookingsReady) {
+        setLoading(false);
+      }
+    };
+
+    const unsubscribeRooms = onSnapshot(
+      collection(db, "rooms"),
+      (snapshot) => {
+        const roomsData = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+
+        setRooms(roomsData);
+
+        if (!roomsReady) {
+          roomsReady = true;
+          finishInitialLoad();
+        }
+      },
+      (error) => {
+        console.log("Admin room listener error:", error);
+
+        if (!roomsReady) {
+          roomsReady = true;
+          finishInitialLoad();
+        }
+
+        Alert.alert(
+          "Room Listener Error",
+          "Unable to receive realtime room updates."
+        );
+      }
+    );
+
+    const unsubscribeBookings = onSnapshot(
+      collection(db, "roomBookings"),
+      (snapshot) => {
+        const bookingsData = snapshot.docs
+          .map((docSnap) => ({
+            id: docSnap.id,
+            ...docSnap.data(),
+          }))
+          .filter((booking) =>
+            ["booked", "checked-in"].includes(booking.status)
+          );
+
+        setBookings(bookingsData);
+
+        if (!bookingsReady) {
+          bookingsReady = true;
+          finishInitialLoad();
+        }
+      },
+      (error) => {
+        console.log("Admin booking listener error:", error);
+
+        if (!bookingsReady) {
+          bookingsReady = true;
+          finishInitialLoad();
+        }
+
+        Alert.alert(
+          "Booking Listener Error",
+          "Unable to receive realtime booking updates."
+        );
+      }
+    );
+
+    return () => {
+      unsubscribeRooms();
+      unsubscribeBookings();
+    };
   }, []);
-
-  const loadData = async () => {
-    try {
-      setLoading(true);
-
-      const [roomsSnap, bookingsSnap] = await Promise.all([
-        getDocs(collection(db, "rooms")),
-        getDocs(
-          query(
-            collection(db, "roomBookings"),
-            where("status", "in", ["booked", "checked-in"])
-          )
-        ),
-      ]);
-
-      const roomsData = roomsSnap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-
-      const bookingsData = bookingsSnap.docs.map((docSnap) => ({
-        id: docSnap.id,
-        ...docSnap.data(),
-      }));
-
-      setRooms(roomsData);
-      setBookings(bookingsData);
-    } catch (error) {
-      console.log("Error loading admin room data:", error);
-      Alert.alert("Error", "Failed to load room data.");
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const bookingsByRoom = useMemo(() => {
     const map = {};
@@ -136,6 +178,37 @@ export default function AdminRoomScreen() {
       };
     });
   }, [rooms, bookingsByRoom]);
+
+  useEffect(() => {
+    if (!roomModalVisible || !selectedRoom?.id) return;
+
+    const latestRoom = roomOverview.find(
+      (room) => room.id === selectedRoom.id
+    );
+
+    if (latestRoom) {
+      setSelectedRoom(latestRoom);
+    }
+
+    if (selectedBooking?.id) {
+      const latestBooking = bookings.find(
+        (booking) => booking.id === selectedBooking.id
+      );
+
+      if (latestBooking) {
+        setSelectedBooking(latestBooking);
+      } else {
+        // The booking may have just been cancelled or checked out.
+        setSelectedBooking(null);
+      }
+    }
+  }, [
+    roomOverview,
+    bookings,
+    roomModalVisible,
+    selectedRoom?.id,
+    selectedBooking?.id,
+  ]);
 
   const formatDateTime = (timestamp) => {
     if (!timestamp?.seconds) return "Not set";
@@ -346,7 +419,6 @@ export default function AdminRoomScreen() {
 
       Alert.alert("Success", "Manual booking created successfully.");
       closeRoomModal();
-      await loadData();
     } catch (error) {
       console.log("Error booking room:", error);
       Alert.alert("Error", "Failed to book room.");
@@ -376,7 +448,6 @@ export default function AdminRoomScreen() {
 
       Alert.alert("Success", "Room is now marked as occupied.");
       closeRoomModal();
-      await loadData();
     } catch (error) {
       console.log("Error occupying booked room:", error);
       Alert.alert("Error", "Failed to occupy room.");
@@ -419,7 +490,6 @@ export default function AdminRoomScreen() {
 
       Alert.alert("Success", "Room is now occupied.");
       closeRoomModal();
-      await loadData();
     } catch (error) {
       console.log("Error occupying room:", error);
       Alert.alert("Error", "Failed to occupy room.");
@@ -453,7 +523,6 @@ export default function AdminRoomScreen() {
 
             Alert.alert("Success", "Booking cancelled.");
             closeRoomModal();
-            await loadData();
           } catch (error) {
             console.log("Error cancelling booking:", error);
             Alert.alert("Error", "Failed to cancel booking.");
@@ -490,7 +559,6 @@ export default function AdminRoomScreen() {
 
             Alert.alert("Success", "Room checked out successfully.");
             closeRoomModal();
-            await loadData();
           } catch (error) {
             console.log("Error checking out room:", error);
             Alert.alert("Error", "Failed to check out room.");
@@ -1126,9 +1194,17 @@ export default function AdminRoomScreen() {
         contentContainerStyle={styles.content}
         showsVerticalScrollIndicator={false}
       >
-        <Text style={styles.pageTitle}>Room Overview</Text>
+        <View style={styles.pageTitleRow}>
+          <Text style={styles.pageTitle}>Room Overview</Text>
+
+          <View style={styles.liveBadge}>
+            <View style={styles.liveDot} />
+            <Text style={styles.liveBadgeText}>LIVE</Text>
+          </View>
+        </View>
+
         <Text style={styles.pageSubtitle}>
-          Tap a room for manual management, or tap its booked reservations to browse and search stays.
+          Bookings update automatically when a guest books, cancels, checks in, or checks out.
         </Text>
 
         {roomOverview.length === 0 ? (
@@ -1248,6 +1324,32 @@ const styles = StyleSheet.create({
   content: {
     padding: 16,
     paddingBottom: 40,
+  },
+  pageTitleRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  liveBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#E9F7EE",
+    borderRadius: 999,
+    paddingHorizontal: 9,
+    paddingVertical: 5,
+  },
+  liveDot: {
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#2E8B57",
+    marginRight: 5,
+  },
+  liveBadgeText: {
+    color: "#267047",
+    fontSize: 10,
+    fontWeight: "900",
+    letterSpacing: 0.7,
   },
   pageTitle: {
     fontSize: 23,
