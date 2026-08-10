@@ -23,7 +23,8 @@ function formatNotificationDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return "Just now";
 
-  return date.toLocaleString([], {
+  return date.toLocaleString("en-PH", {
+    timeZone: "Asia/Manila",
     month: "short",
     day: "numeric",
     hour: "numeric",
@@ -31,24 +32,72 @@ function formatNotificationDate(value) {
   });
 }
 
-function getStatusIcon(status) {
-  switch (status) {
-    case "acknowledged":
-      return "checkmark-circle-outline";
-    case "ongoing":
-      return "time-outline";
-    case "completed":
-      return "checkmark-done-circle-outline";
-    case "cancelled":
-      return "close-circle-outline";
-    default:
-      return "notifications-outline";
+function getNotificationIcon(item) {
+  if (item?.type === "admin_food_cancellation_request") {
+    return "restaurant-outline";
   }
+
+  if (item?.type === "admin_food_guest_cancelled") {
+    return "close-circle-outline";
+  }
+
+  if (item?.type === "admin_request_cancellation_request") {
+    return "clipboard-outline";
+  }
+
+  if (item?.type === "admin_request_guest_cancelled") {
+    return "close-circle-outline";
+  }
+
+  if (item?.type === "booking_reminder") {
+    return "calendar-outline";
+  }
+
+  if (item?.type === "booking_auto_checkout") {
+    return "checkmark-done-circle-outline";
+  }
+
+  if (item?.type === "booking_expired") {
+    return "calendar-clear-outline";
+  }
+
+  if (
+    String(item?.type || "").startsWith("food_") ||
+    item?.source === "food"
+  ) {
+    if (item?.status === "ready") return "checkmark-circle-outline";
+    if (item?.status === "out_for_delivery") return "bicycle-outline";
+    if (item?.status === "delivered") return "bag-check-outline";
+    if (item?.status === "cancelled") return "close-circle-outline";
+    return "restaurant-outline";
+  }
+
+  if (
+    String(item?.type || "").startsWith("request_") ||
+    item?.source === "request"
+  ) {
+    if (item?.status === "completed") {
+      return "checkmark-done-circle-outline";
+    }
+
+    if (item?.status === "cancelled") {
+      return "close-circle-outline";
+    }
+
+    if (item?.status === "ongoing") {
+      return "time-outline";
+    }
+
+    return "clipboard-outline";
+  }
+
+  return "notifications-outline";
 }
 
 export default function GuestNotificationsModal({
   visible,
   notifications = [],
+  isAdmin = false,
   onClose,
   onClear,
 }) {
@@ -76,7 +125,11 @@ export default function GuestNotificationsModal({
               </View>
               <View>
                 <Text style={styles.title}>Notifications</Text>
-                <Text style={styles.subtitle}>Guest request status updates</Text>
+                <Text style={styles.subtitle}>
+                  {isAdmin
+                    ? "Guest cancellation requests and cancellations"
+                    : "Food, request, and reservation updates"}
+                </Text>
               </View>
             </View>
 
@@ -115,8 +168,9 @@ export default function GuestNotificationsModal({
                 </View>
                 <Text style={styles.emptyTitle}>No notifications yet</Text>
                 <Text style={styles.emptyText}>
-                  Updates will appear here when the hotel changes the status of
-                  one of your requests.
+                  {isAdmin
+                    ? "Guest food-order and service-request cancellation requests and direct cancellations will appear here."
+                    : "Food updates, service-request updates, and reservation reminders will appear here."}
                 </Text>
               </View>
             }
@@ -124,7 +178,7 @@ export default function GuestNotificationsModal({
               <View style={styles.notificationCard}>
                 <View style={styles.cardIcon}>
                   <Ionicons
-                    name={getStatusIcon(item.status)}
+                    name={getNotificationIcon(item)}
                     size={23}
                     color={BROWN}
                   />
@@ -147,9 +201,9 @@ export default function GuestNotificationsModal({
                       </Text>
                     </View>
 
-                    {item.requestLabel ? (
+                    {item.guestName || item.requestLabel || item.roomName ? (
                       <Text style={styles.requestLabel} numberOfLines={1}>
-                        {item.requestLabel}
+                        {item.guestName || item.requestLabel || item.roomName}
                       </Text>
                     ) : null}
                   </View>

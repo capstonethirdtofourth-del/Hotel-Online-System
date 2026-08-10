@@ -1,0 +1,12 @@
+{
+  "name": "hk-home-kafe-functions",
+  "private": true,
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "scripts": {
+    "deploy:lifecycle": "firebase deploy --only functions:processBookingLifecycle"
+  },
+  "dependencies": {}
+}

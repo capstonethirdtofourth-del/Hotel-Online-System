@@ -20,6 +20,7 @@ import {
   getDefaultStatusMessage,
   updateActivityStatus,
 } from "../../services/activityStatusService";
+import { createRequestStatusNotification } from "../../services/notificationService";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -181,6 +182,15 @@ export default function AdminRequestScreen() {
           updatedAt: serverTimestamp(),
         });
 
+        await createRequestStatusNotification({
+          request: selectedRequest,
+          status: "cancelled",
+          type: "request_cancellation_approved",
+          title: "Request cancellation approved",
+          message:
+            "The admin approved your cancellation request. The service request was cancelled.",
+        });
+
         Alert.alert(
           "Cancellation Approved",
           "The guest request has been cancelled."
@@ -195,6 +205,15 @@ export default function AdminRequestScreen() {
           statusMessage:
             "The admin declined your cancellation request. Staff will continue handling the request.",
           updatedAt: serverTimestamp(),
+        });
+
+        await createRequestStatusNotification({
+          request: selectedRequest,
+          status: "ongoing",
+          type: "request_cancellation_declined",
+          title: "Request cancellation declined",
+          message:
+            "The admin declined your cancellation request. Staff will continue handling the request.",
         });
 
         Alert.alert(
@@ -245,6 +264,16 @@ export default function AdminRequestScreen() {
         estimatedMinutes: numericEstimate,
         statusMessage,
         actorId: auth.currentUser?.uid || "admin",
+      });
+
+      await createRequestStatusNotification({
+        request: selectedRequest,
+        status: selectedStatus,
+        message:
+          statusMessage?.trim() ||
+          `Your request is now ${
+            REQUEST_STATUS_LABELS[selectedStatus] || selectedStatus
+          }.`,
       });
 
       Alert.alert(

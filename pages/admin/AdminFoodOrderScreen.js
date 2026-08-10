@@ -20,6 +20,7 @@ import {
   getDefaultStatusMessage,
   updateActivityStatus,
 } from "../../services/activityStatusService";
+import { createFoodStatusNotification } from "../../services/notificationService";
 
 const FILTERS = [
   { key: "all", label: "All" },
@@ -175,6 +176,15 @@ export default function AdminFoodOrderScreen() {
           updatedAt: serverTimestamp(),
         });
 
+        await createFoodStatusNotification({
+          order: selectedOrder,
+          status: "cancelled",
+          type: "food_cancellation_approved",
+          title: "Food cancellation approved",
+          message:
+            "The admin approved your cancellation request. The food order was cancelled.",
+        });
+
         Alert.alert(
           "Cancellation Approved",
           "The food order has been cancelled."
@@ -189,6 +199,15 @@ export default function AdminFoodOrderScreen() {
           statusMessage:
             "The admin declined your cancellation request. Your food order is still being prepared.",
           updatedAt: serverTimestamp(),
+        });
+
+        await createFoodStatusNotification({
+          order: selectedOrder,
+          status: "preparing",
+          type: "food_cancellation_declined",
+          title: "Food cancellation declined",
+          message:
+            "The admin declined your cancellation request. Your food order is still being prepared.",
         });
 
         Alert.alert(
@@ -239,6 +258,16 @@ export default function AdminFoodOrderScreen() {
         estimatedMinutes: numericEstimate,
         statusMessage,
         actorId: auth.currentUser?.uid || "admin",
+      });
+
+      await createFoodStatusNotification({
+        order: selectedOrder,
+        status: selectedStatus,
+        message:
+          statusMessage?.trim() ||
+          `Your food order is now ${
+            FOOD_STATUS_LABELS[selectedStatus] || selectedStatus
+          }.`,
       });
 
       Alert.alert("Order Updated", "The guest can now see the new order status.");

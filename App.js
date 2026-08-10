@@ -20,13 +20,14 @@ import {
   where,
   getDoc,
   doc,
+  setDoc,
   updateDoc,
   serverTimestamp,
   onSnapshot,
+  writeBatch,
 } from "firebase/firestore";
 import { auth, db } from "./FirebaseConfig";
 import { useFonts } from "expo-font";
-import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   createBookingWithNightLocks,
   releaseBookingLocksAndUpdateStatus,
@@ -69,12 +70,10 @@ function normalizeFoodStatus(status) {
     in_progress: "preparing",
     inprogress: "preparing",
     cooking: "preparing",
-
     to_be_delivered: "out_for_delivery",
     to_deliver: "out_for_delivery",
     for_delivery: "out_for_delivery",
     outfordelivery: "out_for_delivery",
-
     completed: "delivered",
     complete: "delivered",
     canceled: "cancelled",
@@ -115,15 +114,21 @@ function getTimestampMilliseconds(value) {
   if (typeof value.toMillis === "function") return value.toMillis();
   if (typeof value.seconds === "number") return value.seconds * 1000;
   if (typeof value === "number") return value;
+  if (typeof value === "string") {
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? 0 : parsed;
+  }
   return 0;
 }
 
-function getGuestNotificationStorageKeys(userId) {
-  return {
-    notifications: `hk_request_notifications_${userId}`,
-    requestStatuses: `hk_request_statuses_${userId}`,
-  };
+function getNotificationSortTime(notification) {
+  return (
+    getTimestampMilliseconds(notification?.createdAt) ||
+    getTimestampMilliseconds(notification?.updatedAt) ||
+    0
+  );
 }
+
 
 const Stack = createNativeStackNavigator();
 
@@ -195,7 +200,7 @@ function MainLayout({
             accessibilityLabel="Open navigation menu"
           >
             <Ionicons name="menu-outline" size={30} color="#fff" />
-            {!isAdmin && unreadNotificationCount > 0 ? (
+            {unreadNotificationCount > 0 ? (
               <View style={styles.headerUnreadDot} />
             ) : null}
           </TouchableOpacity>
@@ -212,7 +217,7 @@ function MainLayout({
         </View>
       </View>
 
-      {!isAdmin && notificationBanner ? (
+      {notificationBanner ? (
         <View style={styles.notificationBanner}>
           <TouchableOpacity
             style={styles.notificationBannerMain}
@@ -401,6 +406,37 @@ function MainLayout({
                   >
                     <Feather name="file-text" size={21} color="#4b3a2f" />
                     <Text style={styles.menuText}>Guest Requests</Text>
+                  </TouchableOpacity>
+
+                  <TouchableOpacity
+                    style={styles.menuItem}
+                    onPress={() => {
+                      setMenuVisible(false);
+                      onOpenNotifications();
+                    }}
+                  >
+                    <View style={styles.notificationMenuIconWrap}>
+                      <Ionicons
+                        name="notifications-outline"
+                        size={22}
+                        color="#4b3a2f"
+                      />
+                      {unreadNotificationCount > 0 ? (
+                        <View style={styles.sidebarUnreadDot} />
+                      ) : null}
+                    </View>
+
+                    <Text style={styles.menuText}>Notifications</Text>
+
+                    {unreadNotificationCount > 0 ? (
+                      <View style={styles.sidebarUnreadBadge}>
+                        <Text style={styles.sidebarUnreadBadgeText}>
+                          {unreadNotificationCount > 99
+                            ? "99+"
+                            : unreadNotificationCount}
+                        </Text>
+                      </View>
+                    ) : null}
                   </TouchableOpacity>
                 </>
               ) : (
@@ -609,6 +645,8 @@ export default function App() {
   const [guestNotifications, setGuestNotifications] = useState([]);
   const [requestStatusBanner, setRequestStatusBanner] = useState(null);
   const notificationBannerTimerRef = useRef(null);
+  const banneredNotificationIdsRef = useRef(new Set());
+  const lifecycleRefreshNotificationIdsRef = useRef(new Set());
 
   const [loadingActivity, setLoadingActivity] = useState(false);
   const [loadingReservedRooms, setLoadingReservedRooms] = useState(false);
@@ -642,6 +680,8 @@ export default function App() {
         setUserOrders([]);
         setUserRequests([]);
         setGuestNotifications([]);
+        banneredNotificationIdsRef.current = new Set();
+        lifecycleRefreshNotificationIdsRef.current = new Set();
         setRequestStatusBanner(null);
         setGuestNotificationsVisible(false);
         if (notificationBannerTimerRef.current) {
@@ -724,6 +764,47 @@ export default function App() {
   };
 
   useEffect(() => {
+    if (!currentUser || userData?.role === "admin") {
+      setReservedRooms([]);
+      setLoadingReservedRooms(false);
+      return undefined;
+    }
+
+    setLoadingReservedRooms(true);
+
+    const bookedRoomsQuery = query(
+      collection(db, "roomBookings"),
+      where("userId", "==", currentUser.uid),
+      where("status", "==", "booked")
+    );
+
+    const unsubscribeReservedRooms = onSnapshot(
+      bookedRoomsQuery,
+      (snapshot) => {
+        const data = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+
+        data.sort(
+          (a, b) =>
+            getTimestampMilliseconds(b.reservedAt) -
+            getTimestampMilliseconds(a.reservedAt)
+        );
+
+        setReservedRooms(data);
+        setLoadingReservedRooms(false);
+      },
+      (error) => {
+        console.log("Reserved room listener error:", error);
+        setLoadingReservedRooms(false);
+      }
+    );
+
+    return unsubscribeReservedRooms;
+  }, [currentUser?.uid, userData?.role]);
+
+  useEffect(() => {
     if (!currentUser) {
       setUserOrders([]);
       setUserRequests([]);
@@ -793,185 +874,93 @@ export default function App() {
   }, [currentUser]);
 
   useEffect(() => {
-    if (!currentUser || !userData || userData.role === "admin") {
+    if (!currentUser || !userData) {
       setGuestNotifications([]);
       setRequestStatusBanner(null);
       setGuestNotificationsVisible(false);
+      banneredNotificationIdsRef.current = new Set();
+      lifecycleRefreshNotificationIdsRef.current = new Set();
       return undefined;
     }
 
-    const userId = currentUser.uid;
-    const storageKeys = getGuestNotificationStorageKeys(userId);
-    let unsubscribeRequests = null;
-    let cancelled = false;
-    let knownRequestStatuses = {};
+    const notificationsRef = collection(
+      db,
+      "users",
+      currentUser.uid,
+      "notifications"
+    );
 
-    const setupRequestNotifications = async () => {
-      try {
-        const storedValues = await AsyncStorage.multiGet([
-          storageKeys.notifications,
-          storageKeys.requestStatuses,
-        ]);
+    const unsubscribeNotifications = onSnapshot(
+      notificationsRef,
+      (snapshot) => {
+        const nextNotifications = snapshot.docs
+          .map((docSnap) => {
+            const data = docSnap.data();
+            const createdAtMs = getTimestampMilliseconds(data.createdAt);
 
-        if (cancelled) return;
+            return {
+              id: docSnap.id,
+              firestoreId: docSnap.id,
+              ...data,
+              createdAt: createdAtMs
+                ? new Date(createdAtMs).toISOString()
+                : new Date().toISOString(),
+              read: data.read === true,
+              dismissed: data.dismissed === true,
+            };
+          })
+          .filter((notification) => !notification.dismissed)
+          .sort(
+            (a, b) =>
+              getNotificationSortTime(b) - getNotificationSortTime(a)
+          );
 
-        const storedNotificationsValue = storedValues[0]?.[1];
-        const storedStatusesValue = storedValues[1]?.[1];
+        setGuestNotifications(nextNotifications);
 
-        let storedNotifications = [];
-
-        try {
-          const parsedNotifications = storedNotificationsValue
-            ? JSON.parse(storedNotificationsValue)
-            : [];
-          storedNotifications = Array.isArray(parsedNotifications)
-            ? parsedNotifications
-            : [];
-        } catch (error) {
-          console.log("Unable to read saved guest notifications:", error);
-        }
-
-        try {
-          const parsedStatuses = storedStatusesValue
-            ? JSON.parse(storedStatusesValue)
-            : {};
-          knownRequestStatuses =
-            parsedStatuses && typeof parsedStatuses === "object"
-              ? parsedStatuses
-              : {};
-        } catch (error) {
-          console.log("Unable to read saved request statuses:", error);
-          knownRequestStatuses = {};
-        }
-
-        setGuestNotifications(storedNotifications);
-
-        const requestsQuery = query(
-          collection(db, "requests"),
-          where("userId", "==", userId)
+        const unseenLifecycleUpdates = nextNotifications.filter(
+          (notification) =>
+            ["booking_auto_checkout", "booking_expired"].includes(
+              notification.type
+            ) &&
+            !lifecycleRefreshNotificationIdsRef.current.has(notification.id)
         );
 
-        unsubscribeRequests = onSnapshot(
-          requestsQuery,
-          (snapshot) => {
-            if (cancelled) return;
+        if (unseenLifecycleUpdates.length > 0) {
+          unseenLifecycleUpdates.forEach((notification) => {
+            lifecycleRefreshNotificationIdsRef.current.add(notification.id);
+          });
 
-            const currentStatuses = {};
-            const changedNotifications = [];
+          setRoomStatusRefreshKey((previous) => previous + 1);
+        }
 
-            snapshot.docs.forEach((requestDoc) => {
-              const request = {
-                id: requestDoc.id,
-                ...requestDoc.data(),
-              };
+        const newestUnread = nextNotifications.find(
+          (notification) =>
+            !notification.read &&
+            !banneredNotificationIdsRef.current.has(notification.id)
+        );
 
-              const currentStatus = normalizeRequestStatus(request.status);
-              const previousStatus = knownRequestStatuses[request.id];
-              currentStatuses[request.id] = currentStatus;
+        if (newestUnread) {
+          banneredNotificationIdsRef.current.add(newestUnread.id);
+          setRequestStatusBanner(newestUnread);
 
-              // A missing previous status means this is a new request or the
-              // first time this device has seen it. Seed it without alerting.
-              if (!previousStatus || previousStatus === currentStatus) {
-                return;
-              }
-
-              const statusLabel = getRequestStatusLabel(currentStatus);
-              const requestLabel = request.requestTypeLabels?.length
-                ? request.requestTypeLabels.join(", ")
-                : "service";
-              const updateTime =
-                getTimestampMilliseconds(request.updatedAt) ||
-                getTimestampMilliseconds(
-                  request.statusHistory?.[request.statusHistory.length - 1]?.at
-                ) ||
-                Date.now();
-
-              changedNotifications.push({
-                id: `${request.id}_${currentStatus}_${updateTime}`,
-                requestId: request.id,
-                title: "Request status updated",
-                message:
-                  request.statusMessage?.trim() ||
-                  `Your ${requestLabel} request is now ${statusLabel}.`,
-                status: currentStatus,
-                statusLabel,
-                requestLabel,
-                requestText: request.requestText || "",
-                createdAt: new Date(updateTime).toISOString(),
-                read: false,
-                sortTime: updateTime,
-              });
-            });
-
-            knownRequestStatuses = currentStatuses;
-
-            AsyncStorage.setItem(
-              storageKeys.requestStatuses,
-              JSON.stringify(currentStatuses)
-            ).catch((error) => {
-              console.log("Unable to save request statuses:", error);
-            });
-
-            if (changedNotifications.length === 0) return;
-
-            changedNotifications.sort((a, b) => b.sortTime - a.sortTime);
-            const cleanedNotifications = changedNotifications.map(
-              ({ sortTime, ...notification }) => notification
-            );
-
-            setGuestNotifications((currentNotifications) => {
-              const existingIds = new Set(
-                currentNotifications.map((notification) => notification.id)
-              );
-              const uniqueNewNotifications = cleanedNotifications.filter(
-                (notification) => !existingIds.has(notification.id)
-              );
-
-              if (uniqueNewNotifications.length === 0) {
-                return currentNotifications;
-              }
-
-              const updatedNotifications = [
-                ...uniqueNewNotifications,
-                ...currentNotifications,
-              ].slice(0, 50);
-
-              AsyncStorage.setItem(
-                storageKeys.notifications,
-                JSON.stringify(updatedNotifications)
-              ).catch((error) => {
-                console.log("Unable to save guest notifications:", error);
-              });
-
-              return updatedNotifications;
-            });
-
-            const newestNotification = cleanedNotifications[0];
-            setRequestStatusBanner(newestNotification);
-
-            if (notificationBannerTimerRef.current) {
-              clearTimeout(notificationBannerTimerRef.current);
-            }
-
-            notificationBannerTimerRef.current = setTimeout(() => {
-              setRequestStatusBanner(null);
-              notificationBannerTimerRef.current = null;
-            }, 5000);
-          },
-          (error) => {
-            console.log("Guest request notification listener error:", error);
+          if (notificationBannerTimerRef.current) {
+            clearTimeout(notificationBannerTimerRef.current);
           }
-        );
-      } catch (error) {
-        console.log("Unable to start guest request notifications:", error);
-      }
-    };
 
-    setupRequestNotifications();
+          notificationBannerTimerRef.current = setTimeout(() => {
+            setRequestStatusBanner(null);
+            notificationBannerTimerRef.current = null;
+          }, 5000);
+        }
+      },
+      (error) => {
+        console.log("Guest notification listener error:", error);
+      }
+    );
 
     return () => {
-      cancelled = true;
-      if (unsubscribeRequests) unsubscribeRequests();
+      unsubscribeNotifications();
+
       if (notificationBannerTimerRef.current) {
         clearTimeout(notificationBannerTimerRef.current);
         notificationBannerTimerRef.current = null;
@@ -979,14 +968,339 @@ export default function App() {
     };
   }, [currentUser?.uid, userData?.role]);
 
+  // FREE-PLAN ADMIN CANCELLATION NOTIFICATIONS
+  //
+  // No Cloud Functions are required. While an admin is signed in, this
+  // listener watches the existing orders/requests collections. If the admin
+  // was offline when a guest acted, the current Firestore state is scanned
+  // as soon as the admin opens the app.
+  useEffect(() => {
+    if (
+      !currentUser ||
+      !userData ||
+      userData.role !== "admin"
+    ) {
+      return undefined;
+    }
+
+    const adminUserId = currentUser.uid;
+    const adminNotificationsRef = collection(
+      db,
+      "users",
+      adminUserId,
+      "notifications"
+    );
+
+    const notificationRef = (notificationId) =>
+      doc(
+        db,
+        "users",
+        adminUserId,
+        "notifications",
+        notificationId
+      );
+
+    const timestampKey = (value) => {
+      const millis = getTimestampMilliseconds(value);
+      return millis > 0 ? String(millis) : "current";
+    };
+
+    const ensureNotification = async (notificationId, data) => {
+      try {
+        const ref = notificationRef(notificationId);
+        const existing = await getDoc(ref);
+
+        // Do not overwrite an existing notification. This preserves its
+        // read/dismissed state and prevents duplicate alerts whenever the
+        // realtime listeners fire again.
+        if (existing.exists()) return;
+
+        await setDoc(ref, {
+          userId: adminUserId,
+          source: "admin",
+          read: false,
+          dismissed: false,
+          ...data,
+        });
+      } catch (error) {
+        console.log("Unable to create admin cancellation notification:", error);
+      }
+    };
+
+    const dismissNotificationIfItExists = async (notificationId) => {
+      try {
+        const ref = notificationRef(notificationId);
+        const existing = await getDoc(ref);
+
+        if (!existing.exists()) return;
+
+        const data = existing.data();
+        if (data.dismissed === true) return;
+
+        await updateDoc(ref, {
+          read: true,
+          readAt: serverTimestamp(),
+          dismissed: true,
+          dismissedAt: serverTimestamp(),
+        });
+      } catch (error) {
+        console.log("Unable to dismiss resolved admin notification:", error);
+      }
+    };
+
+    const processFoodOrder = async (order) => {
+      const guestName =
+        order.guestName ||
+        order.userFullName ||
+        order.userEmail ||
+        "A guest";
+
+      const roomName =
+        order.roomName ||
+        order.roomNumber ||
+        "Room not assigned";
+
+      // PREPARING food -> guest requested cancellation -> admin must decide.
+      if (
+        order.cancellationRequested === true &&
+        order.cancellationRequestStatus === "pending"
+      ) {
+        const requestTime =
+          order.cancellationRequestedAt || order.updatedAt;
+
+        const id =
+          `admin_food_cancel_request_${order.id}_${timestampKey(requestTime)}`;
+
+        await ensureNotification(id, {
+          type: "admin_food_cancellation_request",
+          title: "Food cancellation requested",
+          message:
+            `${guestName} requested cancellation of a food order while it is being prepared.`,
+          status: "cancellation_requested",
+          statusLabel: "Needs Review",
+          orderId: order.id,
+          requestId: "",
+          bookingId: order.bookingId || "",
+          requesterUserId: order.userId || "",
+          guestName,
+          roomName,
+          requestLabel: "",
+          eventDate: "",
+          createdAt: requestTime || serverTimestamp(),
+        });
+      }
+
+      // Once a cancellation request is withdrawn/approved/rejected, hide
+      // the old Needs Review alert. cancellationRequestedAt remains on the
+      // document, so we can find the exact deterministic notification ID.
+      if (
+        order.cancellationRequestedAt &&
+        order.cancellationRequestStatus &&
+        order.cancellationRequestStatus !== "pending"
+      ) {
+        const requestId =
+          `admin_food_cancel_request_${order.id}_${timestampKey(
+            order.cancellationRequestedAt
+          )}`;
+
+        await dismissNotificationIfItExists(requestId);
+      }
+
+      // Pending/confirmed food orders can be cancelled immediately by the
+      // guest. The existing security rules require updatedBy == userId for
+      // that guest-originated cancellation, which lets us distinguish it
+      // from an admin cancellation.
+      const cancelledDirectlyByGuest =
+        normalizeFoodStatus(order.status) === "cancelled" &&
+        !!order.userId &&
+        order.updatedBy === order.userId &&
+        order.cancellationRequestStatus !== "approved";
+
+      if (cancelledDirectlyByGuest) {
+        const cancelledTime = order.cancelledAt || order.updatedAt;
+        const id =
+          `admin_food_guest_cancelled_${order.id}_${timestampKey(
+            cancelledTime
+          )}`;
+
+        await ensureNotification(id, {
+          type: "admin_food_guest_cancelled",
+          title: "Food order cancelled by guest",
+          message:
+            `${guestName} cancelled a food order${
+              roomName !== "Room not assigned" ? ` for ${roomName}` : ""
+            }.`,
+          status: "cancelled",
+          statusLabel: "Guest Cancelled",
+          orderId: order.id,
+          requestId: "",
+          bookingId: order.bookingId || "",
+          requesterUserId: order.userId || "",
+          guestName,
+          roomName,
+          requestLabel: "",
+          eventDate: "",
+          createdAt: cancelledTime || serverTimestamp(),
+        });
+      }
+    };
+
+    const processServiceRequest = async (request) => {
+      const guestName =
+        request.userFullName ||
+        request.guestName ||
+        request.userEmail ||
+        "A guest";
+
+      const roomName =
+        request.roomName ||
+        request.roomNumber ||
+        "Room not assigned";
+
+      const requestLabel =
+        Array.isArray(request.requestTypeLabels) &&
+        request.requestTypeLabels.length > 0
+          ? request.requestTypeLabels.join(", ")
+          : "Service Request";
+
+      // ONGOING service request -> guest requested cancellation.
+      if (
+        request.cancellationRequested === true &&
+        request.cancellationRequestStatus === "pending"
+      ) {
+        const requestTime =
+          request.cancellationRequestedAt || request.updatedAt;
+
+        const id =
+          `admin_request_cancel_request_${request.id}_${timestampKey(
+            requestTime
+          )}`;
+
+        await ensureNotification(id, {
+          type: "admin_request_cancellation_request",
+          title: "Request cancellation requested",
+          message:
+            `${guestName} requested cancellation of ${requestLabel} while it is ongoing.`,
+          status: "cancellation_requested",
+          statusLabel: "Needs Review",
+          orderId: "",
+          requestId: request.id,
+          bookingId: request.bookingId || "",
+          requesterUserId: request.userId || "",
+          guestName,
+          roomName,
+          requestLabel,
+          eventDate: "",
+          createdAt: requestTime || serverTimestamp(),
+        });
+      }
+
+      if (
+        request.cancellationRequestedAt &&
+        request.cancellationRequestStatus &&
+        request.cancellationRequestStatus !== "pending"
+      ) {
+        const notificationId =
+          `admin_request_cancel_request_${request.id}_${timestampKey(
+            request.cancellationRequestedAt
+          )}`;
+
+        await dismissNotificationIfItExists(notificationId);
+      }
+
+      // Pending/acknowledged requests cancelled directly by the guest.
+      const cancelledDirectlyByGuest =
+        normalizeRequestStatus(request.status) === "cancelled" &&
+        !!request.userId &&
+        request.updatedBy === request.userId &&
+        request.cancellationRequestStatus !== "approved";
+
+      if (cancelledDirectlyByGuest) {
+        const cancelledTime = request.cancelledAt || request.updatedAt;
+        const id =
+          `admin_request_guest_cancelled_${request.id}_${timestampKey(
+            cancelledTime
+          )}`;
+
+        await ensureNotification(id, {
+          type: "admin_request_guest_cancelled",
+          title: "Service request cancelled by guest",
+          message:
+            `${guestName} cancelled ${requestLabel}${
+              roomName !== "Room not assigned" ? ` for ${roomName}` : ""
+            }.`,
+          status: "cancelled",
+          statusLabel: "Guest Cancelled",
+          orderId: "",
+          requestId: request.id,
+          bookingId: request.bookingId || "",
+          requesterUserId: request.userId || "",
+          guestName,
+          roomName,
+          requestLabel,
+          eventDate: "",
+          createdAt: cancelledTime || serverTimestamp(),
+        });
+      }
+    };
+
+    const unsubscribeOrders = onSnapshot(
+      collection(db, "orders"),
+      (snapshot) => {
+        const orders = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+
+        Promise.all(orders.map(processFoodOrder)).catch((error) => {
+          console.log("Admin food cancellation watcher error:", error);
+        });
+      },
+      (error) => {
+        console.log("Admin food cancellation listener error:", error);
+      }
+    );
+
+    const unsubscribeRequests = onSnapshot(
+      collection(db, "requests"),
+      (snapshot) => {
+        const requests = snapshot.docs.map((docSnap) => ({
+          id: docSnap.id,
+          ...docSnap.data(),
+        }));
+
+        Promise.all(requests.map(processServiceRequest)).catch((error) => {
+          console.log("Admin request cancellation watcher error:", error);
+        });
+      },
+      (error) => {
+        console.log("Admin request cancellation listener error:", error);
+      }
+    );
+
+    return () => {
+      unsubscribeOrders();
+      unsubscribeRequests();
+    };
+  }, [currentUser?.uid, userData?.role]);
+
+  const allGuestNotifications = useMemo(
+    () =>
+      [...guestNotifications].sort(
+        (a, b) => getNotificationSortTime(b) - getNotificationSortTime(a)
+      ),
+    [guestNotifications]
+  );
+
   const unreadNotificationCount = useMemo(
     () =>
-      guestNotifications.filter((notification) => !notification.read).length,
-    [guestNotifications]
+      allGuestNotifications.filter((notification) => !notification.read).length,
+    [allGuestNotifications]
   );
 
   const dismissRequestStatusBanner = () => {
     setRequestStatusBanner(null);
+
     if (notificationBannerTimerRef.current) {
       clearTimeout(notificationBannerTimerRef.current);
       notificationBannerTimerRef.current = null;
@@ -999,39 +1313,76 @@ export default function App() {
 
     if (!currentUser) return;
 
-    const storageKeys = getGuestNotificationStorageKeys(currentUser.uid);
+    const unreadNotifications = guestNotifications.filter(
+      (notification) => !notification.read && notification.firestoreId
+    );
 
-    setGuestNotifications((currentNotifications) => {
-      const hasUnread = currentNotifications.some(
-        (notification) => !notification.read
-      );
+    if (unreadNotifications.length === 0) return;
 
-      if (!hasUnread) return currentNotifications;
-
-      const readNotifications = currentNotifications.map((notification) => ({
+    setGuestNotifications((currentNotifications) =>
+      currentNotifications.map((notification) => ({
         ...notification,
         read: true,
-      }));
+      }))
+    );
 
-      AsyncStorage.setItem(
-        storageKeys.notifications,
-        JSON.stringify(readNotifications)
-      ).catch((error) => {
-        console.log("Unable to mark guest notifications as read:", error);
-      });
+    const batch = writeBatch(db);
 
-      return readNotifications;
+    unreadNotifications.forEach((notification) => {
+      batch.update(
+        doc(
+          db,
+          "users",
+          currentUser.uid,
+          "notifications",
+          notification.firestoreId
+        ),
+        {
+          read: true,
+          readAt: serverTimestamp(),
+        }
+      );
+    });
+
+    batch.commit().catch((error) => {
+      console.log("Unable to mark notifications as read:", error);
     });
   };
 
   const clearGuestNotifications = () => {
+    if (!currentUser || guestNotifications.length === 0) {
+      setGuestNotifications([]);
+      return;
+    }
+
+    const visibleNotifications = guestNotifications.filter(
+      (notification) => notification.firestoreId
+    );
+
     setGuestNotifications([]);
 
-    if (!currentUser) return;
+    const batch = writeBatch(db);
 
-    const storageKeys = getGuestNotificationStorageKeys(currentUser.uid);
-    AsyncStorage.removeItem(storageKeys.notifications).catch((error) => {
-      console.log("Unable to clear guest notifications:", error);
+    visibleNotifications.forEach((notification) => {
+      batch.update(
+        doc(
+          db,
+          "users",
+          currentUser.uid,
+          "notifications",
+          notification.firestoreId
+        ),
+        {
+          read: true,
+          readAt: serverTimestamp(),
+          dismissed: true,
+          dismissedAt: serverTimestamp(),
+        }
+      );
+    });
+
+    batch.commit().catch((error) => {
+      console.log("Unable to clear notifications:", error);
     });
   };
 
@@ -1039,9 +1390,8 @@ export default function App() {
     setActivityStatusVisible(true);
   };
 
-  const openReservedRoomsModal = async () => {
+  const openReservedRoomsModal = () => {
     setReservedRoomsModalVisible(true);
-    await fetchReservedRooms();
   };
 
   const handleBookRoom = async (roomOrBookingDetails) => {
@@ -1297,11 +1647,9 @@ export default function App() {
     const status = normalizeFoodStatus(order.status || "pending");
     const cancellationState = order.cancellationRequestStatus || "";
 
-    // Pending/confirmed orders still cancel immediately.
     if (["pending", "confirmed"].includes(status)) {
       try {
         setCancellingOrderId(order.id);
-
         await updateActivityStatus({
           collectionName: "orders",
           documentId: order.id,
@@ -1309,7 +1657,6 @@ export default function App() {
           statusMessage: "The guest cancelled this food order.",
           actorId: user.uid,
         });
-
         Alert.alert("Order Cancelled", "Your order has been cancelled.");
         return true;
       } catch (error) {
@@ -1327,23 +1674,18 @@ export default function App() {
     }
 
     if (status === "preparing") {
-      // Pending cancellation request -> allow the guest to withdraw it.
       if (cancellationState === "pending") {
         Alert.alert(
           "Cancel Cancellation Request?",
           "This will remove your pending cancellation request. Your food order will continue to be prepared.",
           [
-            {
-              text: "Keep Request",
-              style: "cancel",
-            },
+            { text: "Keep Request", style: "cancel" },
             {
               text: "Cancel Request",
               style: "destructive",
               onPress: async () => {
                 try {
                   setCancellingOrderId(order.id);
-
                   await updateDoc(doc(db, "orders", order.id), {
                     cancellationRequested: false,
                     cancellationRequestStatus: "withdrawn",
@@ -1351,16 +1693,12 @@ export default function App() {
                       "The guest withdrew the cancellation request. The food order is still being prepared.",
                     updatedAt: serverTimestamp(),
                   });
-
                   Alert.alert(
                     "Cancellation Request Removed",
                     "Your food order will continue to be prepared."
                   );
                 } catch (error) {
-                  console.log(
-                    "Error withdrawing food cancellation request:",
-                    error
-                  );
+                  console.log("Error withdrawing food cancellation request:", error);
                   Alert.alert(
                     "Error",
                     error?.code === "permission-denied"
@@ -1374,7 +1712,6 @@ export default function App() {
             },
           ]
         );
-
         return true;
       }
 
@@ -1386,26 +1723,19 @@ export default function App() {
         return false;
       }
 
-      if (cancellationState === "approved") {
-        return false;
-      }
+      if (cancellationState === "approved") return false;
 
-      // Ask for confirmation BEFORE creating the cancellation request.
       Alert.alert(
         "Request Cancellation?",
         "Your food is already being prepared. This will only send a cancellation request to the admin; the order will stay active until the admin approves it.",
         [
-          {
-            text: "No",
-            style: "cancel",
-          },
+          { text: "No", style: "cancel" },
           {
             text: "Yes, Request",
             style: "destructive",
             onPress: async () => {
               try {
                 setCancellingOrderId(order.id);
-
                 await updateDoc(doc(db, "orders", order.id), {
                   cancellationRequested: true,
                   cancellationRequestStatus: "pending",
@@ -1415,7 +1745,6 @@ export default function App() {
                     "Cancellation requested. Waiting for admin approval while the order is being prepared.",
                   updatedAt: serverTimestamp(),
                 });
-
                 Alert.alert(
                   "Cancellation Requested",
                   "Your request was sent to the admin. The order remains active until the admin approves the cancellation."
@@ -1435,7 +1764,6 @@ export default function App() {
           },
         ]
       );
-
       return true;
     }
 
@@ -1460,11 +1788,9 @@ export default function App() {
     const requestStatus = normalizeRequestStatus(request.status);
     const cancellationState = request.cancellationRequestStatus || "";
 
-    // Pending/acknowledged requests still cancel immediately.
     if (["pending", "acknowledged"].includes(requestStatus)) {
       try {
         setCancellingRequestId(request.id);
-
         await updateActivityStatus({
           collectionName: "requests",
           documentId: request.id,
@@ -1472,7 +1798,6 @@ export default function App() {
           statusMessage: "The guest cancelled this service request.",
           actorId: user.uid,
         });
-
         Alert.alert("Request Cancelled", "Your request has been cancelled.");
         return true;
       } catch (error) {
@@ -1490,23 +1815,18 @@ export default function App() {
     }
 
     if (requestStatus === "ongoing") {
-      // Pending cancellation request -> guest may withdraw it.
       if (cancellationState === "pending") {
         Alert.alert(
           "Cancel Cancellation Request?",
           "This will remove your pending cancellation request. Staff will continue handling your service request.",
           [
-            {
-              text: "Keep Request",
-              style: "cancel",
-            },
+            { text: "Keep Request", style: "cancel" },
             {
               text: "Cancel Request",
               style: "destructive",
               onPress: async () => {
                 try {
                   setCancellingRequestId(request.id);
-
                   await updateDoc(doc(db, "requests", request.id), {
                     cancellationRequested: false,
                     cancellationRequestStatus: "withdrawn",
@@ -1514,16 +1834,12 @@ export default function App() {
                       "The guest withdrew the cancellation request. Staff will continue handling the request.",
                     updatedAt: serverTimestamp(),
                   });
-
                   Alert.alert(
                     "Cancellation Request Removed",
                     "Your service request will remain active."
                   );
                 } catch (error) {
-                  console.log(
-                    "Error withdrawing service cancellation request:",
-                    error
-                  );
+                  console.log("Error withdrawing service cancellation request:", error);
                   Alert.alert(
                     "Error",
                     error?.code === "permission-denied"
@@ -1537,7 +1853,6 @@ export default function App() {
             },
           ]
         );
-
         return true;
       }
 
@@ -1549,25 +1864,19 @@ export default function App() {
         return false;
       }
 
-      if (cancellationState === "approved") {
-        return false;
-      }
+      if (cancellationState === "approved") return false;
 
       Alert.alert(
         "Request Cancellation?",
         "This service request is already being handled. This will only send a cancellation request to the admin; the request stays active until the admin approves it.",
         [
-          {
-            text: "No",
-            style: "cancel",
-          },
+          { text: "No", style: "cancel" },
           {
             text: "Yes, Request",
             style: "destructive",
             onPress: async () => {
               try {
                 setCancellingRequestId(request.id);
-
                 await updateDoc(doc(db, "requests", request.id), {
                   cancellationRequested: true,
                   cancellationRequestStatus: "pending",
@@ -1577,16 +1886,12 @@ export default function App() {
                     "Cancellation requested. Waiting for admin approval while staff are handling the request.",
                   updatedAt: serverTimestamp(),
                 });
-
                 Alert.alert(
                   "Cancellation Requested",
                   "Your cancellation request was sent to the admin. The service request remains active until the admin approves it."
                 );
               } catch (error) {
-                console.log(
-                  "Error requesting service cancellation:",
-                  error
-                );
+                console.log("Error requesting service cancellation:", error);
                 Alert.alert(
                   "Error",
                   error?.code === "permission-denied"
@@ -1600,7 +1905,6 @@ export default function App() {
           },
         ]
       );
-
       return true;
     }
 
@@ -1657,7 +1961,8 @@ export default function App() {
 
       <GuestNotificationsModal
         visible={guestNotificationsVisible}
-        notifications={guestNotifications}
+        notifications={allGuestNotifications}
+        isAdmin={userData?.role === "admin"}
         onClose={() => setGuestNotificationsVisible(false)}
         onClear={clearGuestNotifications}
       />
