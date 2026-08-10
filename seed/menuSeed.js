@@ -3,9 +3,9 @@ export const menuData = [
     id: "appetizers",
     title: "Appetizers",
     items: [
-      // { name: "Chicharon Bulaklak", price: 190, description: "Crispy bulaklak in vinegar dipping sauces" },
+      { name: "Baked Mac", price: 190, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348950/Baked_Mac_jn4rbw.jpg"},
       { name: "Vegetable Fritter (Ukoy)", price: 150, description: "Deep fried squash, carrots, sweet potato", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471662/Okoy_onuws5.jpg" },
-      // { name: "Sisig Nachos", price: 195, description: "Nacho chips, cheese sauce, crispy sisig" },
+      { name: "Lumpiang Gulay", price: 195, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351999/Lumpiang_Gulay_yqmg7x.jpg" },
       { name: "Sushi Bake", prices: { small: 380, medium: 450 }, description: "Crabsticks, seaweeds, cucumber & carrots in foil pan", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471667/Sushi_Baked_nvgjec.jpg" },
       { name: "Calamares", price: 220, description: "Breaded squid rings, aioli dipping", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Calamari_Rings_yx8cts.jpg" },
       // { name: "Loaded Nacho Fries", price: 195, description: "French fries, cheese sauce, meat, bacon, mayonnaise" },
@@ -21,13 +21,13 @@ export const menuData = [
     id: "pasta_noodles",
     title: "Pasta & Noodles",
     items: [
-      // { name: "H&K’s Pancit na Sulit", price: 190 },
+      { name: "H&K’s Pancit na Sulit", price: 190, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786350918/Pancit_yhqsmc.jpg" },
       { name: "H&K’s Palabok", price: 180, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471663/Pancit_Palabok_rx03nq.jpg" },
       { name: "Spaghetti with Meatballs", price: 180, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471664/Spaghetti_with_Meatballs_i6xoey.jpg" },
-      // { name: "Classic Carbona", price: 180 },
+      { name: "Mami with Meat & Egg", price: 120, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348205/Mami_with_Meat_and_Egg_fkn4gb.jpg" },
       { name: "Chicken Pesto", price: 190, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471663/Pesto_Pasta_cefdsb.jpg" },
-      // { name: "Shrimp Aglio Olio", price: 190 },
-      // { name: "Chicken Mami", price: 160 },
+      { name: "Carbonara with Fries", price: 190, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351325/Carbonara_with_Fries_ys6yi7.jpg" },
+      { name: "Pancit Bihon Bowl", price: 160, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351452/Pancit_Bihon_Bowl_yymu4y.jpg" },
       // { name: "Korean Ramen", price: 180 }
     ]
   },
@@ -40,7 +40,7 @@ export const menuData = [
       // { name: "Bulalo", price: 378, description: "Beef shank, potatoes, sweet corn, cabbage" },
       // { name: "Crispy Tapa Flakes", price: 230, description: "Pulled beef, honey" },
       // { name: "Beef Lenggua", price: 480, description: "New!" },
-      // { name: "Beef Broccoli", price: 480, description: "New!" }
+      { name: "Bibimbap", price: 480, description: "New!", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351009/Bibimbap_km8mq0.jpg"},
     ]
   },
 
@@ -48,11 +48,13 @@ export const menuData = [
     id: "chicken",
     title: "Chicken",
     items: [
-      // { name: "Mother’s Chicken", price: 280, description: "Marinated chicken then fried, Baguio’s all-time favorite chicken" },
+      { name: "Fried Egg, Chicken and Rice", price: 180, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348868/Fried_Egg_Chicken_and_Rice_gohlss.jpg" },
       { name: "Chicken Cordon Bleu", price: 350, description: "Sliced cordon bleu, special white sauce", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471665/Cordonblue_yijqut.jpg" },
-      // { name: "Chicken Wings (6pcs)", price: 200, description: "Flavors: Sriracha, Soy garlic or Salt & Pepper" },
-      // { name: "Chicken Curry", price: 330, description: "New!" },
-      // { name: "Chicken Terriyaki", price: 380, description: "New!" }
+      { name: "Chicken Caldereta", price: 300, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348572/Chicken_Caldareta_i9vn6a.jpg"},
+      { name: "Baked Chicken", price: 330, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348501/Baked_Chicken_ojjyzk.jpg" },
+      { name: "Pastil", price: 100, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786347590/Pastil_aiopec.jpg" },
+      { name: "Roasted Chicken", price: 100, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786349095/Chicken_Roasted_hnicz4.jpg" },
+      { name: "Creamy Corn Chicken", price: 100, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351930/Creamy_Corn_Chicken_ieaqip.jpg" },
     ]
   },
 
@@ -62,8 +64,8 @@ export const menuData = [
     items: [
       // { name: "Crispy Tapa Flakes", price: 150, description: "Served with garlic fried rice, egg and brewed coffee" },
       // { name: "Garlic Longganisa", price: 150, description: "2pcs longganisa of cabanatuan" },
-      // { name: "Homemade Daing na Bangus", price: 170 },
-      // { name: "Omelette", price: 170, description: "Main: Tuna/Ham&cheese/bacon&mushroom" },
+      { name: "Breakfast Platter", price: 170, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352071/Breakfast_Platter_Toast_Sausage_ncl14k.jpg" },
+      { name: "Spam & Egg Rice Bowl", price: 120, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786349016/Spam_Egg_Rice_Bowl_zmrkcc.jpg" },
       { name: "Bacon", price: 130, description: "2 strips of bacon, egg, ketchup", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471666/Full_Breakfast_Bacon_Eggs_ty0i4e.jpg" },
       // { name: "French Toast - Plain", price: 100, description: "3pcs loaf bread" },
       // { name: "American Breakfast", price: 180, description: "Toast bread, scrambled egg, sausage, fries" }
@@ -75,11 +77,11 @@ export const menuData = [
     title: "Pork",
     items: [
       { name: "Liempo Kare-kare", price: 280, description: "Lechon kawali, peanut sauce, string beans, squash, petchay", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Kare-Kare_ktfb5x.jpg" },
-      // { name: "Crispy Pata", price: 798, description: "Crispy pork pata, soysauce, vinegar, onion, chili" },
-      // { name: "Pork Sisig", price: 280, description: "Pork mask, onions, chili, mayonnaise, soy sauce" },
-      // { name: "Pork Binagoongan", price: 280, description: "Sliced liempo, bagoong, chili, eggplant" },
+      { name: "Kare Kare", price: 498, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352195/Kare-Kare_arqxzf.jpg" },
+      { name: "Pork Sisig", price: 280, description: "Pork mask, onions, chili, mayonnaise, soy sauce", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348421/Sisig_Platter_dwcuuu.jpg"},
+      { name: "Pork Skewers", price: 280, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352194/Pork_Skewers_BBQ_sc8ljw.jpg" },
       // { name: "Sinigang na Liempo & Hipon", price: 380 },
-      // { name: "Cream Style Meatballs", price: 350, description: "New!" }
+      { name: "Fried Liempo", price: 350, description: "New!", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786347590/Fried_Liempo_hib8qk.jpg" }
     ]
   },
 
@@ -95,19 +97,20 @@ export const menuData = [
   //   ]
   // },
 
-  // {
-  //   id: "seafoods",
-  //   title: "Seafoods",
-  //   items: [
-  //     { name: "Lemon & Butter Shrimp", price: 300 },
-  //     { name: "Adobong Pusit in Olive Oil", price: 220 },
-  //     { name: "Grilled Stuffed Squid (2pcs)", price: 250 },
-  //     { name: "Fish Fillet", price: 220, description: "Fish fillet in tartar sauce" },
-  //     { name: "Sweet & Sour Pompano", price: 350 },
-  //     { name: "Steamed Pompano", price: 340 },
-  //     { name: "Sinigang na Pompano", price: 350 }
-  //   ]
-  // },
+  {
+    id: "seafoods",
+    title: "Seafoods",
+    items: [
+      // { name: "Lemon & Butter Shrimp", price: 300 },
+      // { name: "Adobong Pusit in Olive Oil", price: 220 },
+      // { name: "Grilled Stuffed Squid (2pcs)", price: 250 },
+      // { name: "Fish Fillet", price: 220, description: "Fish fillet in tartar sauce" },
+      { name: "Fish Fillet With Lemon", price: 350, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352195/Fish_Fillet_with_Lemon_maqmp8.jpg" },
+      { name: "Seafood Stir-Fry", price: 340, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786350841/Seafood_Stir-fry_gmusy5.jpg" },
+      { name: "Fish with Lemon", price: 350, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348356/Fish_with_Lemon_hfqszd.jpg"},
+      { name: "Fried Bangus with Rice", price: 350, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786347590/Pastil_aiopec.jpg" },
+    ]
+  },
 
   {
     id: "vegetables",
@@ -118,8 +121,17 @@ export const menuData = [
       // { name: "Pinakbet", price: 250, description: "Bitter gourd, sweet potato, eggplant, string beans, tomatoes" },
       // { name: "H&K’s Fresh Lumpia (1 roll)", price: 75 },
       { name: "H&K’s Fresh Lumpia (3 rolls)", price: 200, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Lumpiang_Gulay_z1l1gb.jpg" },
-      // { name: "Fresh Spring Rolls", price: 180, description: "New!" },
+      { name: "Mixed Vegetables Stir-Fry", price: 200, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352484/Mixed_Vegetable_Stir-fry_yhk5br.jpg" },
       // { name: "Broccoli & Scallops", price: 380, description: "New!" }
+    ]
+  },
+
+  {
+    id: "breads",
+    title: "Breads",
+    items: [
+      { name: "Spanish Bread", price: 100, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348094/Spanish_Bread_vtew2q.jpg" },
+      { name: "Mini pizza Style", price: 100, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348652/Mini_Pizza_Style_t50rxa.jpg" },
     ]
   },
 
@@ -132,7 +144,7 @@ export const menuData = [
       // { name: "Monte Cristo", price: 150, description: "Bacon and cheese in crusted loaf breads" },
       // { name: "Egg Sandwich", price: 130, description: "Hard boiled eggs, chives, mayo" },
       { name: "Beef Burger", price: 180, description: "Quarter pounder size homemade beef patties with cheese, lettuce", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471664/Beef_Burger_zmovld.jpg" },
-      // { name: "Chicken Burger", price: 160, description: "Homemade chicken patties, coleslaw" },
+      { name: "Burger", price: 160, description: "Homemade patties, coleslaw", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352410/Burger_tn3nls.jpg" },
       // { name: "Sriracha Chicken Burger", price: 170, description: "Homemade chicken patties drenched in special sriracha sauce" },
       // { name: "Chicken Burger Big (Pre-order)", price: 500, description: "8x11 size bun - serves 4 to 5 persons" },
       // { name: "Yes You Ken Burger (Pre-order)", price: 550, description: "8x11 size bun - serves 4 to 5 persons" }
@@ -160,7 +172,19 @@ export const menuData = [
       // { name: "Matcha Latte", prices: { small: 108, large: 118 } },
       // { name: "Chocolate", prices: { small: 108, large: 118 } },
       { name: "Strawberry", prices: { small: 108, large: 118 }, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471667/Strawberry_Flavored_Milktea_osrs3r.jpg" },
-      // { name: "Oreo", prices: { small: 108, large: 118 } }
+      { name: "Ube & Cheese Flavored Milktea", prices: { small: 108, large: 118 }, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348723/Ube_Cheese_Flavored_Milktea_ofqbvu.jpg" }
+    ]
+  },
+  {
+    id: "desserts",
+    title: "Desserts",
+    items: [
+      { name: "Banana Bread", price: 180, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351225/Banana_Bread_y9bxl1.jpg" },
+      { name: "Turon", price: 50, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786348009/Turon_kgviu8.jpg" },
+      { name: "Brownies Chocolate Cake", price: 120, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351579/Brownies_Chocolate_Cake_rjxxno.jpg" },
+      { name: "Blueberry Cheesecake", price: 120, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351868/Blueberry_Cheesecake_y529c7.jpg" },
+      { name: "Tiramisu Cake", prices: { small: 110, large: 120 }, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786347590/Tirumisu_Cake_tgnyrd.jpg" },
+      { name: "Oreo", prices: { small: 108, large: 118 }, image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351174/Tiramisu_Oreo_Dessert_xzmk8w.jpg" }
     ]
   },
 
@@ -178,7 +202,7 @@ export const menuData = [
     title: "Bento Meals - 180 Pesos",
     items: [
       { name: "Set A", price: 180, choices: ["Chicken Terriyaki", "Fish fillet"], image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471665/Bento_Meal_ifwjr1.jpg" },
-      // { name: "Set B", price: 180, choices: ["Pork Steak", "Chicken Cordon Bleu"] },
+      { name: "Set B", price: 180, choices: ["Rice Meal with Fried Egg Chicken"], image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786351796/Rice_Meal_with_Fried_Egg_Chicken_e6dpyi.jpg" },
       // { name: "Set C", price: 180, choices: ["Lumpia Shanghai", "H&K’s Chopsuey"] },
       // { name: "Set D", price: 180, choices: ["Chicken Curry", "Pork Tonkatsu"] },
       // { name: "Set E", price: 180, choices: ["BBQ Pork Belly", "Gising-gising"] },
@@ -222,7 +246,7 @@ export const menuData = [
       // { name: "Pork Binagoongan", price: 98, description: "Pork liempo in bagoong with fried eggplant" },
       // { name: "Lumpia Shanghai", price: 98, description: "2 rolls shanghai with stir fry vegetables" },
       // { name: "Spamchi", price: 110, description: "2 slices of spam, egg and kimchi" },
-      { name: "Pork Sisig", price: 120, description: "Crispy pork sisig, chili, soy sauce", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1777471661/Kare-Kare_ktfb5x.jpg" },
+      { name: "Pork Sisig", price: 120, description: "Crispy pork sisig, chili, soy sauce", image: "https://res.cloudinary.com/dragd5hfj/image/upload/v1786352598/Sisig_with_Rice_vlxvmr.jpg" },
       // { name: "Mother’s Chicken", price: 120, description: "Marinated fried chicken with stir fry veggies" },
       // { name: "Tapa Flakes", price: 120, description: "Crispy tapa flakes with scrambled egg" }
     ]
