@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useState } from "react";
+import React, { useEffect, useMemo, useRef, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -210,6 +210,9 @@ export default function BookingDetailsModal({
   const [specialRequest, setSpecialRequest] = useState("");
   const [loading, setLoading] = useState(false);
 
+  const bookingScrollRef = useRef(null);
+  const previousRoomIdRef = useRef(null);
+
   const roomPriceValue = parsePrice(room?.price || room?.roomPrice || 0);
   const roomPriceLabel =
     typeof room?.price === "string" && room?.price.trim()
@@ -219,18 +222,44 @@ export default function BookingDetailsModal({
   const roomId = room?.id || room?.roomId || null;
   const maxGuests = Number(room?.maxGuests || room?.capacity || 0);
 
-  useEffect(() => {
-    if (!visible) return;
-
+  const resetBookingForm = () => {
     setCheckInDate(null);
     setCheckOutDate(null);
     setCheckInTime(new Date());
     setShowTimePicker(false);
+
     setAdults(1);
     setChildren(0);
     setPets(0);
-    setSelectedAddOns({ breakfast: true });
+
+    setSelectedAddOns({
+      breakfast: true,
+      extra_bed: false,
+    });
+
     setSpecialRequest("");
+
+    requestAnimationFrame(() => {
+      bookingScrollRef.current?.scrollTo({
+        y: 0,
+        animated: false,
+      });
+    });
+  };
+
+  useEffect(() => {
+    if (!visible || !roomId) return;
+
+    const isFirstBookingSession = previousRoomIdRef.current === null;
+    const openedDifferentRoom = previousRoomIdRef.current !== roomId;
+
+    if (isFirstBookingSession || openedDifferentRoom) {
+      resetBookingForm();
+    }
+
+    // Keep this room ID while the modal is hidden so reopening the same room
+    // preserves the guest's unfinished draft.
+    previousRoomIdRef.current = roomId;
   }, [visible, roomId]);
 
   const unavailableNightSet = useMemo(
@@ -519,6 +548,8 @@ export default function BookingDetailsModal({
           onBookingCreated(result || bookingData);
         }
 
+        resetBookingForm();
+        previousRoomIdRef.current = null;
         onClose();
         return;
       }
@@ -537,6 +568,8 @@ export default function BookingDetailsModal({
         });
       }
 
+      resetBookingForm();
+      previousRoomIdRef.current = null;
       onClose();
     } catch (error) {
       console.log("Booking error:", error);
@@ -565,7 +598,10 @@ export default function BookingDetailsModal({
             </Pressable>
           </View>
 
-          <ScrollView showsVerticalScrollIndicator={false}>
+          <ScrollView
+            ref={bookingScrollRef}
+            showsVerticalScrollIndicator={false}
+          >
             <View style={styles.roomCard}>
               <Text style={styles.roomPrice}>{roomPriceLabel} / night</Text>
               <Text style={styles.roomNote}>
