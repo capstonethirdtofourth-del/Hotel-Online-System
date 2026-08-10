@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../../FirebaseConfig";
 import StatusTimeline from "../components/StatusTimeline";
 import {
@@ -98,6 +98,11 @@ export default function AdminRequestScreen() {
 
         data.sort((a, b) => getTimeValue(b) - getTimeValue(a));
         setRequests(data);
+        setSelectedRequest((current) =>
+          current
+            ? data.find((request) => request.id === current.id) || null
+            : null
+        );
         setLoading(false);
       },
       (error) => {
@@ -145,8 +150,78 @@ export default function AdminRequestScreen() {
     }
   };
 
+  const respondToCancellation = async (approve) => {
+    if (
+      !selectedRequest ||
+      selectedRequest.cancellationRequestStatus !== "pending" ||
+      saving
+    ) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      if (approve) {
+        await updateActivityStatus({
+          collectionName: "requests",
+          documentId: selectedRequest.id,
+          status: "cancelled",
+          statusMessage:
+            "The admin approved your cancellation request. The service request was cancelled.",
+          actorId: auth.currentUser?.uid || "admin",
+        });
+
+        await updateDoc(doc(db, "requests", selectedRequest.id), {
+          cancellationRequested: false,
+          cancellationRequestStatus: "approved",
+          cancellationDecisionAt: serverTimestamp(),
+          cancellationDecisionBy: auth.currentUser?.uid || "admin",
+          cancellationDecisionMessage: "Cancellation approved by admin.",
+          updatedAt: serverTimestamp(),
+        });
+
+        Alert.alert(
+          "Cancellation Approved",
+          "The guest request has been cancelled."
+        );
+      } else {
+        await updateDoc(doc(db, "requests", selectedRequest.id), {
+          cancellationRequested: false,
+          cancellationRequestStatus: "rejected",
+          cancellationDecisionAt: serverTimestamp(),
+          cancellationDecisionBy: auth.currentUser?.uid || "admin",
+          cancellationDecisionMessage: "Cancellation declined by admin.",
+          statusMessage:
+            "The admin declined your cancellation request. Staff will continue handling the request.",
+          updatedAt: serverTimestamp(),
+        });
+
+        Alert.alert(
+          "Cancellation Declined",
+          "The request remains in Ongoing status."
+        );
+      }
+
+      setSelectedRequest(null);
+    } catch (error) {
+      console.log("Request cancellation decision error:", error);
+      Alert.alert("Error", "Failed to process the cancellation request.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveUpdate = async () => {
     if (!selectedRequest || saving) return;
+
+    if (selectedRequest.cancellationRequestStatus === "pending") {
+      Alert.alert(
+        "Resolve Cancellation First",
+        "Approve or decline the guest's cancellation request before changing the service status."
+      );
+      return;
+    }
 
     const numericEstimate = estimatedMinutes.trim()
       ? Number(estimatedMinutes)
@@ -281,6 +356,15 @@ export default function AdminRequestScreen() {
                   </View>
                 </View>
 
+                {request.cancellationRequestStatus === "pending" ? (
+                  <View style={styles.cancellationCardNotice}>
+                    <Ionicons name="warning-outline" size={16} color="#9A5B00" />
+                    <Text style={styles.cancellationCardNoticeText}>
+                      Guest requested cancellation
+                    </Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.cardFooter}>
                   <Text style={styles.messagePreview} numberOfLines={2}>
                     {request.statusMessage || "Request submitted."}
@@ -327,6 +411,53 @@ export default function AdminRequestScreen() {
                   </Text>
                 </View>
 
+                {selectedRequest.cancellationRequestStatus === "pending" ? (
+                  <View style={styles.cancellationDecisionBox}>
+                    <View style={styles.cancellationDecisionHeader}>
+                      <Ionicons
+                        name="alert-circle-outline"
+                        size={21}
+                        color="#8A5B25"
+                      />
+                      <View style={styles.cancellationDecisionHeading}>
+                        <Text style={styles.cancellationDecisionTitle}>
+                          Cancellation Requested
+                        </Text>
+                        <Text style={styles.cancellationDecisionText}>
+                          The guest wants to cancel this ongoing service request.
+                          Resolve it before updating the request status.
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cancellationDecisionActions}>
+                      <TouchableOpacity
+                        style={styles.declineCancellationButton}
+                        onPress={() => respondToCancellation(false)}
+                        disabled={saving}
+                      >
+                        <Text style={styles.declineCancellationText}>
+                          Decline
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.approveCancellationButton}
+                        onPress={() => respondToCancellation(true)}
+                        disabled={saving}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.approveCancellationText}>
+                            Approve Cancellation
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+
                 <StatusTimeline
                   type="requests"
                   status={normalizeStatus(selectedRequest.status)}
@@ -345,6 +476,10 @@ export default function AdminRequestScreen() {
                           active && styles.statusChipActive,
                         ]}
                         onPress={() => chooseStatus(status)}
+                        disabled={
+                          saving ||
+                          selectedRequest.cancellationRequestStatus === "pending"
+                        }
                       >
                         <Text
                           style={[
@@ -372,6 +507,10 @@ export default function AdminRequestScreen() {
                           active && styles.estimateChipActive,
                         ]}
                         onPress={() => setEstimatedMinutes(String(minutes))}
+                        disabled={
+                          saving ||
+                          selectedRequest.cancellationRequestStatus === "pending"
+                        }
                       >
                         <Text
                           style={[
@@ -394,7 +533,10 @@ export default function AdminRequestScreen() {
                   }
                   placeholder="Custom minutes (optional)"
                   keyboardType="number-pad"
-                  editable={!saving}
+                  editable={
+                    !saving &&
+                    selectedRequest.cancellationRequestStatus !== "pending"
+                  }
                 />
 
                 <Text style={styles.sectionTitle}>Message to Guest</Text>
@@ -405,13 +547,24 @@ export default function AdminRequestScreen() {
                   placeholder="Example: Housekeeping is on the way."
                   multiline
                   textAlignVertical="top"
-                  editable={!saving}
+                  editable={
+                    !saving &&
+                    selectedRequest.cancellationRequestStatus !== "pending"
+                  }
                 />
 
                 <TouchableOpacity
-                  style={[styles.saveButton, saving && styles.disabledButton]}
+                  style={[
+                    styles.saveButton,
+                    (saving ||
+                      selectedRequest.cancellationRequestStatus === "pending") &&
+                      styles.disabledButton,
+                  ]}
                   onPress={saveUpdate}
-                  disabled={saving}
+                  disabled={
+                    saving ||
+                    selectedRequest.cancellationRequestStatus === "pending"
+                  }
                 >
                   {saving ? (
                     <ActivityIndicator color="#fff" />
@@ -525,6 +678,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: "center",
   },
+  cancellationCardNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF0CE",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  cancellationCardNoticeText: {
+    color: "#81510F",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 6,
+  },
   cardFooter: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -604,6 +772,65 @@ const styles = StyleSheet.create({
     fontSize: 14,
     lineHeight: 20,
     marginTop: 7,
+  },
+  cancellationDecisionBox: {
+    backgroundColor: "#FFF6DF",
+    borderWidth: 1,
+    borderColor: "#E5C37C",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  cancellationDecisionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  cancellationDecisionHeading: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  cancellationDecisionTitle: {
+    color: "#6B3F0C",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  cancellationDecisionText: {
+    color: "#725B3D",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  cancellationDecisionActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+  declineCancellationButton: {
+    borderWidth: 1,
+    borderColor: "#B84040",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginRight: 8,
+  },
+  declineCancellationText: {
+    color: "#B84040",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  approveCancellationButton: {
+    minWidth: 145,
+    backgroundColor: "#B84040",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  approveCancellationText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
   },
   sectionTitle: {
     fontSize: 15,

@@ -58,10 +58,48 @@ const REQUEST_STATUS_LABELS = {
   cancelled: "Cancelled",
 };
 
+function normalizeFoodStatus(status) {
+  const normalized = String(status || "pending")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const aliases = {
+    ongoing: "preparing",
+    in_progress: "preparing",
+    inprogress: "preparing",
+    cooking: "preparing",
+
+    to_be_delivered: "out_for_delivery",
+    to_deliver: "out_for_delivery",
+    for_delivery: "out_for_delivery",
+    outfordelivery: "out_for_delivery",
+
+    completed: "delivered",
+    complete: "delivered",
+    canceled: "cancelled",
+  };
+
+  return aliases[normalized] || normalized;
+}
+
 function normalizeRequestStatus(status) {
-  if (status === "confirmed") return "acknowledged";
-  if (status === "fulfilled") return "completed";
-  return status || "pending";
+  const normalized = String(status || "pending")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const aliases = {
+    confirmed: "acknowledged",
+    in_progress: "ongoing",
+    inprogress: "ongoing",
+    processing: "ongoing",
+    fulfilled: "completed",
+    complete: "completed",
+    canceled: "cancelled",
+  };
+
+  return aliases[normalized] || normalized;
 }
 
 function getRequestStatusLabel(status) {
@@ -1256,68 +1294,321 @@ export default function App() {
     const user = auth.currentUser;
     if (!user || !order) return false;
 
-    try {
-      setCancellingOrderId(order.id);
+    const status = normalizeFoodStatus(order.status || "pending");
+    const cancellationState = order.cancellationRequestStatus || "";
 
-      if (!["pending", "confirmed"].includes(order.status || "pending")) {
-        Alert.alert("Cannot Cancel", "This order is already being processed.");
+    // Pending/confirmed orders still cancel immediately.
+    if (["pending", "confirmed"].includes(status)) {
+      try {
+        setCancellingOrderId(order.id);
+
+        await updateActivityStatus({
+          collectionName: "orders",
+          documentId: order.id,
+          status: "cancelled",
+          statusMessage: "The guest cancelled this food order.",
+          actorId: user.uid,
+        });
+
+        Alert.alert("Order Cancelled", "Your order has been cancelled.");
+        return true;
+      } catch (error) {
+        console.log("Order cancellation error:", error);
+        Alert.alert(
+          "Error",
+          error?.code === "permission-denied"
+            ? "Permission denied. Publish the updated Firestore rules first."
+            : "Failed to cancel the order."
+        );
+        return false;
+      } finally {
+        setCancellingOrderId(null);
+      }
+    }
+
+    if (status === "preparing") {
+      // Pending cancellation request -> allow the guest to withdraw it.
+      if (cancellationState === "pending") {
+        Alert.alert(
+          "Cancel Cancellation Request?",
+          "This will remove your pending cancellation request. Your food order will continue to be prepared.",
+          [
+            {
+              text: "Keep Request",
+              style: "cancel",
+            },
+            {
+              text: "Cancel Request",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  setCancellingOrderId(order.id);
+
+                  await updateDoc(doc(db, "orders", order.id), {
+                    cancellationRequested: false,
+                    cancellationRequestStatus: "withdrawn",
+                    statusMessage:
+                      "The guest withdrew the cancellation request. The food order is still being prepared.",
+                    updatedAt: serverTimestamp(),
+                  });
+
+                  Alert.alert(
+                    "Cancellation Request Removed",
+                    "Your food order will continue to be prepared."
+                  );
+                } catch (error) {
+                  console.log(
+                    "Error withdrawing food cancellation request:",
+                    error
+                  );
+                  Alert.alert(
+                    "Error",
+                    error?.code === "permission-denied"
+                      ? "Permission denied. Publish the updated Firestore rules first."
+                      : "Failed to remove the cancellation request."
+                  );
+                } finally {
+                  setCancellingOrderId(null);
+                }
+              },
+            },
+          ]
+        );
+
+        return true;
+      }
+
+      if (cancellationState === "rejected") {
+        Alert.alert(
+          "Cancellation Declined",
+          "The admin already declined cancellation for this order."
+        );
         return false;
       }
 
-      await updateActivityStatus({
-        collectionName: "orders",
-        documentId: order.id,
-        status: "cancelled",
-        statusMessage: "The guest cancelled this food order.",
-        actorId: user.uid,
-      });
+      if (cancellationState === "approved") {
+        return false;
+      }
 
-      Alert.alert("Order Cancelled", "Your order has been cancelled.");
+      // Ask for confirmation BEFORE creating the cancellation request.
+      Alert.alert(
+        "Request Cancellation?",
+        "Your food is already being prepared. This will only send a cancellation request to the admin; the order will stay active until the admin approves it.",
+        [
+          {
+            text: "No",
+            style: "cancel",
+          },
+          {
+            text: "Yes, Request",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setCancellingOrderId(order.id);
+
+                await updateDoc(doc(db, "orders", order.id), {
+                  cancellationRequested: true,
+                  cancellationRequestStatus: "pending",
+                  cancellationRequestedAt: serverTimestamp(),
+                  cancellationRequestedBy: user.uid,
+                  statusMessage:
+                    "Cancellation requested. Waiting for admin approval while the order is being prepared.",
+                  updatedAt: serverTimestamp(),
+                });
+
+                Alert.alert(
+                  "Cancellation Requested",
+                  "Your request was sent to the admin. The order remains active until the admin approves the cancellation."
+                );
+              } catch (error) {
+                console.log("Error requesting food cancellation:", error);
+                Alert.alert(
+                  "Error",
+                  error?.code === "permission-denied"
+                    ? "Permission denied. Publish the updated Firestore rules first."
+                    : "Failed to request cancellation."
+                );
+              } finally {
+                setCancellingOrderId(null);
+              }
+            },
+          },
+        ]
+      );
+
       return true;
-    } catch (error) {
-      console.log("Error cancelling order:", error);
-      Alert.alert("Error", "Failed to cancel order.");
-      return false;
-    } finally {
-      setCancellingOrderId(null);
     }
+
+    if (["ready", "out_for_delivery"].includes(status)) {
+      Alert.alert(
+        "Cancellation Unavailable",
+        status === "ready"
+          ? "This order is already ready and can no longer be cancelled."
+          : "This order is already out for delivery and can no longer be cancelled."
+      );
+      return false;
+    }
+
+    Alert.alert("Cannot Cancel", "This order can no longer be cancelled.");
+    return false;
   };
 
   const handleCancelRequest = async (request) => {
     const user = auth.currentUser;
     if (!user || !request) return false;
 
-    try {
-      setCancellingRequestId(request.id);
+    const requestStatus = normalizeRequestStatus(request.status);
+    const cancellationState = request.cancellationRequestStatus || "";
 
-      const requestStatus =
-        request.status === "fulfilled"
-          ? "completed"
-          : request.status === "confirmed"
-          ? "acknowledged"
-          : request.status || "pending";
-      if (!["pending", "acknowledged"].includes(requestStatus)) {
-        Alert.alert("Cannot Cancel", "This request is already being processed.");
+    // Pending/acknowledged requests still cancel immediately.
+    if (["pending", "acknowledged"].includes(requestStatus)) {
+      try {
+        setCancellingRequestId(request.id);
+
+        await updateActivityStatus({
+          collectionName: "requests",
+          documentId: request.id,
+          status: "cancelled",
+          statusMessage: "The guest cancelled this service request.",
+          actorId: user.uid,
+        });
+
+        Alert.alert("Request Cancelled", "Your request has been cancelled.");
+        return true;
+      } catch (error) {
+        console.log("Request cancellation error:", error);
+        Alert.alert(
+          "Error",
+          error?.code === "permission-denied"
+            ? "Permission denied. Publish the updated Firestore rules first."
+            : "Failed to cancel the request."
+        );
+        return false;
+      } finally {
+        setCancellingRequestId(null);
+      }
+    }
+
+    if (requestStatus === "ongoing") {
+      // Pending cancellation request -> guest may withdraw it.
+      if (cancellationState === "pending") {
+        Alert.alert(
+          "Cancel Cancellation Request?",
+          "This will remove your pending cancellation request. Staff will continue handling your service request.",
+          [
+            {
+              text: "Keep Request",
+              style: "cancel",
+            },
+            {
+              text: "Cancel Request",
+              style: "destructive",
+              onPress: async () => {
+                try {
+                  setCancellingRequestId(request.id);
+
+                  await updateDoc(doc(db, "requests", request.id), {
+                    cancellationRequested: false,
+                    cancellationRequestStatus: "withdrawn",
+                    statusMessage:
+                      "The guest withdrew the cancellation request. Staff will continue handling the request.",
+                    updatedAt: serverTimestamp(),
+                  });
+
+                  Alert.alert(
+                    "Cancellation Request Removed",
+                    "Your service request will remain active."
+                  );
+                } catch (error) {
+                  console.log(
+                    "Error withdrawing service cancellation request:",
+                    error
+                  );
+                  Alert.alert(
+                    "Error",
+                    error?.code === "permission-denied"
+                      ? "Permission denied. Publish the updated Firestore rules first."
+                      : "Failed to remove the cancellation request."
+                  );
+                } finally {
+                  setCancellingRequestId(null);
+                }
+              },
+            },
+          ]
+        );
+
+        return true;
+      }
+
+      if (cancellationState === "rejected") {
+        Alert.alert(
+          "Cancellation Declined",
+          "The admin already declined cancellation for this request."
+        );
         return false;
       }
 
-      await updateActivityStatus({
-        collectionName: "requests",
-        documentId: request.id,
-        status: "cancelled",
-        statusMessage: "The guest cancelled this service request.",
-        actorId: user.uid,
-      });
+      if (cancellationState === "approved") {
+        return false;
+      }
 
-      Alert.alert("Request Cancelled", "Your request has been cancelled.");
+      Alert.alert(
+        "Request Cancellation?",
+        "This service request is already being handled. This will only send a cancellation request to the admin; the request stays active until the admin approves it.",
+        [
+          {
+            text: "No",
+            style: "cancel",
+          },
+          {
+            text: "Yes, Request",
+            style: "destructive",
+            onPress: async () => {
+              try {
+                setCancellingRequestId(request.id);
+
+                await updateDoc(doc(db, "requests", request.id), {
+                  cancellationRequested: true,
+                  cancellationRequestStatus: "pending",
+                  cancellationRequestedAt: serverTimestamp(),
+                  cancellationRequestedBy: user.uid,
+                  statusMessage:
+                    "Cancellation requested. Waiting for admin approval while staff are handling the request.",
+                  updatedAt: serverTimestamp(),
+                });
+
+                Alert.alert(
+                  "Cancellation Requested",
+                  "Your cancellation request was sent to the admin. The service request remains active until the admin approves it."
+                );
+              } catch (error) {
+                console.log(
+                  "Error requesting service cancellation:",
+                  error
+                );
+                Alert.alert(
+                  "Error",
+                  error?.code === "permission-denied"
+                    ? "Permission denied. Publish the updated Firestore rules first."
+                    : "Failed to request cancellation."
+                );
+              } finally {
+                setCancellingRequestId(null);
+              }
+            },
+          },
+        ]
+      );
+
       return true;
-    } catch (error) {
-      console.log("Error cancelling request:", error);
-      Alert.alert("Error", "Failed to cancel request.");
-      return false;
-    } finally {
-      setCancellingRequestId(null);
     }
+
+    Alert.alert(
+      "Cancellation Unavailable",
+      "This request has reached a stage where it can no longer be cancelled."
+    );
+    return false;
   };
 
   const screenProps = useMemo(

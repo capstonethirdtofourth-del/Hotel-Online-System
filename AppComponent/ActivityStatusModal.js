@@ -85,6 +85,48 @@ function getTimestampValue(item) {
   );
 }
 
+function normalizeFoodStatus(status) {
+  const normalized = String(status || "pending")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const aliases = {
+    ongoing: "preparing",
+    in_progress: "preparing",
+    inprogress: "preparing",
+    cooking: "preparing",
+    to_be_delivered: "out_for_delivery",
+    to_deliver: "out_for_delivery",
+    for_delivery: "out_for_delivery",
+    outfordelivery: "out_for_delivery",
+    completed: "delivered",
+    complete: "delivered",
+    canceled: "cancelled",
+  };
+
+  return aliases[normalized] || normalized;
+}
+
+function normalizeRequestStatus(status) {
+  const normalized = String(status || "pending")
+    .trim()
+    .toLowerCase()
+    .replace(/[\s-]+/g, "_");
+
+  const aliases = {
+    confirmed: "acknowledged",
+    in_progress: "ongoing",
+    inprogress: "ongoing",
+    processing: "ongoing",
+    fulfilled: "completed",
+    complete: "completed",
+    canceled: "cancelled",
+  };
+
+  return aliases[normalized] || normalized;
+}
+
 export default function ActivityStatusModal({
   visible,
   onClose,
@@ -111,9 +153,17 @@ export default function ActivityStatusModal({
   const items = activeTab === "orders" ? sortedOrders : sortedRequests;
 
   const renderOrder = (order) => {
-    const status = order.status || "pending";
+    const status = normalizeFoodStatus(order.status);
     const estimate = formatEstimate(order);
-    const cancellable = ["pending", "confirmed"].includes(status);
+    const directCancellable = ["pending", "confirmed"].includes(status);
+    const canRequestCancellation =
+      status === "preparing" &&
+      !["pending", "rejected", "approved"].includes(
+        order.cancellationRequestStatus || ""
+      );
+    const cancellationPending = order.cancellationRequestStatus === "pending";
+    const cancellationRejected = order.cancellationRequestStatus === "rejected";
+    const cancellationLocked = ["ready", "out_for_delivery"].includes(status);
     const isCancelling = cancellingOrderId === order.id;
 
     return (
@@ -156,16 +206,67 @@ export default function ActivityStatusModal({
             Total: ₱{Number(order.total || 0).toLocaleString("en-PH")}
           </Text>
 
-          {cancellable && onCancelOrder ? (
-            <TouchableOpacity
-              style={[styles.cancelButton, isCancelling && styles.disabledButton]}
-              onPress={() => onCancelOrder(order)}
-              disabled={isCancelling}
-            >
-              <Text style={styles.cancelButtonText}>
-                {isCancelling ? "Cancelling..." : "Cancel"}
-              </Text>
-            </TouchableOpacity>
+          {onCancelOrder ? (
+            directCancellable ? (
+              <TouchableOpacity
+                style={[styles.cancelButton, isCancelling && styles.disabledButton]}
+                onPress={() => onCancelOrder(order)}
+                disabled={isCancelling}
+              >
+                <Text style={styles.cancelButtonText}>
+                  {isCancelling ? "Cancelling..." : "Cancel"}
+                </Text>
+              </TouchableOpacity>
+            ) : canRequestCancellation ? (
+              <TouchableOpacity
+                style={[
+                  styles.requestCancelButton,
+                  isCancelling && styles.disabledButton,
+                ]}
+                onPress={() => onCancelOrder(order)}
+                disabled={isCancelling}
+              >
+                <Text style={styles.requestCancelButtonText}>
+                  {isCancelling ? "Sending..." : "Request Cancellation"}
+                </Text>
+              </TouchableOpacity>
+            ) : cancellationPending ? (
+              <View style={styles.pendingCancellationActions}>
+                <View style={styles.pendingCancellationPill}>
+                  <Ionicons name="time-outline" size={14} color="#8A5B25" />
+                  <Text style={styles.pendingCancellationText}>
+                    Cancellation Requested
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.withdrawCancellationButton,
+                    isCancelling && styles.disabledButton,
+                  ]}
+                  onPress={() => onCancelOrder(order)}
+                  disabled={isCancelling}
+                >
+                  <Text style={styles.withdrawCancellationText}>
+                    {isCancelling
+                      ? "Updating..."
+                      : "Cancel Cancellation Request"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : cancellationRejected ? (
+              <View style={styles.rejectedCancellationPill}>
+                <Text style={styles.rejectedCancellationText}>
+                  Cancellation Declined
+                </Text>
+              </View>
+            ) : cancellationLocked ? (
+              <View style={styles.unavailableCancellationPill}>
+                <Text style={styles.unavailableCancellationText}>
+                  Cancellation Unavailable
+                </Text>
+              </View>
+            ) : null
           ) : null}
         </View>
       </View>
@@ -173,14 +274,20 @@ export default function ActivityStatusModal({
   };
 
   const renderRequest = (request) => {
-    const normalizedStatus =
-      request.status === "fulfilled"
-        ? "completed"
-        : request.status === "confirmed"
-        ? "acknowledged"
-        : request.status || "pending";
+    const normalizedStatus = normalizeRequestStatus(request.status);
     const estimate = formatEstimate(request);
-    const cancellable = ["pending", "acknowledged"].includes(normalizedStatus);
+    const directCancellable = ["pending", "acknowledged"].includes(
+      normalizedStatus
+    );
+    const canRequestCancellation =
+      normalizedStatus === "ongoing" &&
+      !["pending", "rejected", "approved"].includes(
+        request.cancellationRequestStatus || ""
+      );
+    const cancellationPending =
+      request.cancellationRequestStatus === "pending";
+    const cancellationRejected =
+      request.cancellationRequestStatus === "rejected";
     const isCancelling = cancellingRequestId === request.id;
 
     return (
@@ -219,17 +326,62 @@ export default function ActivityStatusModal({
 
         <StatusTimeline type="requests" status={normalizedStatus} />
 
-        {cancellable && onCancelRequest ? (
+        {onCancelRequest ? (
           <View style={styles.requestFooter}>
-            <TouchableOpacity
-              style={[styles.cancelButton, isCancelling && styles.disabledButton]}
-              onPress={() => onCancelRequest(request)}
-              disabled={isCancelling}
-            >
-              <Text style={styles.cancelButtonText}>
-                {isCancelling ? "Cancelling..." : "Cancel Request"}
-              </Text>
-            </TouchableOpacity>
+            {directCancellable ? (
+              <TouchableOpacity
+                style={[styles.cancelButton, isCancelling && styles.disabledButton]}
+                onPress={() => onCancelRequest(request)}
+                disabled={isCancelling}
+              >
+                <Text style={styles.cancelButtonText}>
+                  {isCancelling ? "Cancelling..." : "Cancel Request"}
+                </Text>
+              </TouchableOpacity>
+            ) : canRequestCancellation ? (
+              <TouchableOpacity
+                style={[
+                  styles.requestCancelButton,
+                  isCancelling && styles.disabledButton,
+                ]}
+                onPress={() => onCancelRequest(request)}
+                disabled={isCancelling}
+              >
+                <Text style={styles.requestCancelButtonText}>
+                  {isCancelling ? "Sending..." : "Request Cancellation"}
+                </Text>
+              </TouchableOpacity>
+            ) : cancellationPending ? (
+              <View style={styles.pendingCancellationActions}>
+                <View style={styles.pendingCancellationPill}>
+                  <Ionicons name="time-outline" size={14} color="#8A5B25" />
+                  <Text style={styles.pendingCancellationText}>
+                    Cancellation Requested
+                  </Text>
+                </View>
+
+                <TouchableOpacity
+                  style={[
+                    styles.withdrawCancellationButton,
+                    isCancelling && styles.disabledButton,
+                  ]}
+                  onPress={() => onCancelRequest(request)}
+                  disabled={isCancelling}
+                >
+                  <Text style={styles.withdrawCancellationText}>
+                    {isCancelling
+                      ? "Updating..."
+                      : "Cancel Cancellation Request"}
+                  </Text>
+                </TouchableOpacity>
+              </View>
+            ) : cancellationRejected ? (
+              <View style={styles.rejectedCancellationPill}>
+                <Text style={styles.rejectedCancellationText}>
+                  Cancellation Declined
+                </Text>
+              </View>
+            ) : null}
           </View>
         ) : null}
       </View>
@@ -481,6 +633,70 @@ const styles = StyleSheet.create({
   cancelButtonText: {
     color: "#fff",
     fontSize: 12,
+    fontWeight: "800",
+  },
+  requestCancelButton: {
+    backgroundColor: "#8A5B25",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  requestCancelButtonText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  pendingCancellationActions: {
+    alignItems: "flex-end",
+  },
+  withdrawCancellationButton: {
+    marginTop: 6,
+    borderWidth: 1,
+    borderColor: "#8A5B25",
+    borderRadius: 9,
+    paddingHorizontal: 10,
+    paddingVertical: 7,
+    backgroundColor: "#fff",
+  },
+  withdrawCancellationText: {
+    color: "#8A5B25",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  pendingCancellationPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF0CE",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  pendingCancellationText: {
+    color: "#8A5B25",
+    fontSize: 11,
+    fontWeight: "800",
+    marginLeft: 5,
+  },
+  rejectedCancellationPill: {
+    backgroundColor: "#FCE8E8",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  rejectedCancellationText: {
+    color: "#A33A3A",
+    fontSize: 11,
+    fontWeight: "800",
+  },
+  unavailableCancellationPill: {
+    backgroundColor: "#ECE7E2",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+  },
+  unavailableCancellationText: {
+    color: "#83766C",
+    fontSize: 11,
     fontWeight: "800",
   },
   disabledButton: {

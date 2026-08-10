@@ -11,7 +11,7 @@ import {
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { collection, onSnapshot } from "firebase/firestore";
+import { collection, doc, onSnapshot, serverTimestamp, updateDoc } from "firebase/firestore";
 import { auth, db } from "../../FirebaseConfig";
 import StatusTimeline from "../components/StatusTimeline";
 import {
@@ -96,6 +96,9 @@ export default function AdminFoodOrderScreen() {
 
         data.sort((a, b) => getTimeValue(b) - getTimeValue(a));
         setOrders(data);
+        setSelectedOrder((current) =>
+          current ? data.find((order) => order.id === current.id) || null : null
+        );
         setLoading(false);
       },
       (error) => {
@@ -141,8 +144,78 @@ export default function AdminFoodOrderScreen() {
     }
   };
 
+  const respondToCancellation = async (approve) => {
+    if (
+      !selectedOrder ||
+      selectedOrder.cancellationRequestStatus !== "pending" ||
+      saving
+    ) {
+      return;
+    }
+
+    try {
+      setSaving(true);
+
+      if (approve) {
+        await updateActivityStatus({
+          collectionName: "orders",
+          documentId: selectedOrder.id,
+          status: "cancelled",
+          statusMessage:
+            "The admin approved your cancellation request. The food order was cancelled.",
+          actorId: auth.currentUser?.uid || "admin",
+        });
+
+        await updateDoc(doc(db, "orders", selectedOrder.id), {
+          cancellationRequested: false,
+          cancellationRequestStatus: "approved",
+          cancellationDecisionAt: serverTimestamp(),
+          cancellationDecisionBy: auth.currentUser?.uid || "admin",
+          cancellationDecisionMessage: "Cancellation approved by admin.",
+          updatedAt: serverTimestamp(),
+        });
+
+        Alert.alert(
+          "Cancellation Approved",
+          "The food order has been cancelled."
+        );
+      } else {
+        await updateDoc(doc(db, "orders", selectedOrder.id), {
+          cancellationRequested: false,
+          cancellationRequestStatus: "rejected",
+          cancellationDecisionAt: serverTimestamp(),
+          cancellationDecisionBy: auth.currentUser?.uid || "admin",
+          cancellationDecisionMessage: "Cancellation declined by admin.",
+          statusMessage:
+            "The admin declined your cancellation request. Your food order is still being prepared.",
+          updatedAt: serverTimestamp(),
+        });
+
+        Alert.alert(
+          "Cancellation Declined",
+          "The order remains in Preparing status."
+        );
+      }
+
+      setSelectedOrder(null);
+    } catch (error) {
+      console.log("Food cancellation decision error:", error);
+      Alert.alert("Error", "Failed to process the cancellation request.");
+    } finally {
+      setSaving(false);
+    }
+  };
+
   const saveUpdate = async () => {
     if (!selectedOrder || saving) return;
+
+    if (selectedOrder.cancellationRequestStatus === "pending") {
+      Alert.alert(
+        "Resolve Cancellation First",
+        "Approve or decline the guest's cancellation request before changing the order status."
+      );
+      return;
+    }
 
     const numericEstimate = estimatedMinutes.trim()
       ? Number(estimatedMinutes)
@@ -262,6 +335,15 @@ export default function AdminFoodOrderScreen() {
                   </View>
                 </View>
 
+                {order.cancellationRequestStatus === "pending" ? (
+                  <View style={styles.cancellationCardNotice}>
+                    <Ionicons name="warning-outline" size={16} color="#9A5B00" />
+                    <Text style={styles.cancellationCardNoticeText}>
+                      Guest requested cancellation
+                    </Text>
+                  </View>
+                ) : null}
+
                 <View style={styles.itemList}>
                   {(order.items || []).slice(0, 3).map((item, index) => (
                     <View key={`${item.name}-${index}`} style={styles.orderItemLine}>
@@ -330,6 +412,53 @@ export default function AdminFoodOrderScreen() {
                   </Text>
                 </View>
 
+                {selectedOrder.cancellationRequestStatus === "pending" ? (
+                  <View style={styles.cancellationDecisionBox}>
+                    <View style={styles.cancellationDecisionHeader}>
+                      <Ionicons
+                        name="alert-circle-outline"
+                        size={21}
+                        color="#8A5B25"
+                      />
+                      <View style={styles.cancellationDecisionHeading}>
+                        <Text style={styles.cancellationDecisionTitle}>
+                          Cancellation Requested
+                        </Text>
+                        <Text style={styles.cancellationDecisionText}>
+                          The guest wants to cancel this preparing order.
+                          Resolve it before updating the order status.
+                        </Text>
+                      </View>
+                    </View>
+
+                    <View style={styles.cancellationDecisionActions}>
+                      <TouchableOpacity
+                        style={styles.declineCancellationButton}
+                        onPress={() => respondToCancellation(false)}
+                        disabled={saving}
+                      >
+                        <Text style={styles.declineCancellationText}>
+                          Decline
+                        </Text>
+                      </TouchableOpacity>
+
+                      <TouchableOpacity
+                        style={styles.approveCancellationButton}
+                        onPress={() => respondToCancellation(true)}
+                        disabled={saving}
+                      >
+                        {saving ? (
+                          <ActivityIndicator size="small" color="#fff" />
+                        ) : (
+                          <Text style={styles.approveCancellationText}>
+                            Approve Cancellation
+                          </Text>
+                        )}
+                      </TouchableOpacity>
+                    </View>
+                  </View>
+                ) : null}
+
                 <Text style={styles.sectionTitle}>Order Items</Text>
                 <View style={styles.modalItemsBox}>
                   {(selectedOrder.items || []).map((item, index) => (
@@ -378,6 +507,10 @@ export default function AdminFoodOrderScreen() {
                         key={status}
                         style={[styles.statusChip, active && styles.statusChipActive]}
                         onPress={() => chooseStatus(status)}
+                        disabled={
+                          saving ||
+                          selectedOrder.cancellationRequestStatus === "pending"
+                        }
                       >
                         <Text style={[styles.statusChipText, active && styles.statusChipTextActive]}>
                           {FOOD_STATUS_LABELS[status] || status}
@@ -396,6 +529,10 @@ export default function AdminFoodOrderScreen() {
                         key={minutes}
                         style={[styles.estimateChip, active && styles.estimateChipActive]}
                         onPress={() => setEstimatedMinutes(String(minutes))}
+                        disabled={
+                          saving ||
+                          selectedOrder.cancellationRequestStatus === "pending"
+                        }
                       >
                         <Text style={[styles.estimateChipText, active && styles.estimateChipTextActive]}>
                           {minutes} min
@@ -411,7 +548,10 @@ export default function AdminFoodOrderScreen() {
                   onChangeText={(value) => setEstimatedMinutes(value.replace(/[^0-9]/g, ""))}
                   placeholder="Custom minutes (optional)"
                   keyboardType="number-pad"
-                  editable={!saving}
+                  editable={
+                    !saving &&
+                    selectedOrder.cancellationRequestStatus !== "pending"
+                  }
                 />
 
                 <Text style={styles.sectionTitle}>Message to Guest</Text>
@@ -422,7 +562,10 @@ export default function AdminFoodOrderScreen() {
                   placeholder="Example: Your food is being prepared."
                   multiline
                   textAlignVertical="top"
-                  editable={!saving}
+                  editable={
+                    !saving &&
+                    selectedOrder.cancellationRequestStatus !== "pending"
+                  }
                 />
 
                 <TouchableOpacity
@@ -534,6 +677,21 @@ const styles = StyleSheet.create({
     fontSize: 10,
     textAlign: "center",
   },
+  cancellationCardNotice: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "#FFF0CE",
+    borderRadius: 10,
+    paddingHorizontal: 10,
+    paddingVertical: 8,
+    marginTop: 10,
+  },
+  cancellationCardNoticeText: {
+    color: "#81510F",
+    fontSize: 12,
+    fontWeight: "800",
+    marginLeft: 6,
+  },
   itemList: {
     marginTop: 10,
     backgroundColor: "#faf7f4",
@@ -633,6 +791,65 @@ const styles = StyleSheet.create({
     color: "#51473f",
     fontSize: 13,
     marginBottom: 4,
+  },
+  cancellationDecisionBox: {
+    backgroundColor: "#FFF6DF",
+    borderWidth: 1,
+    borderColor: "#E5C37C",
+    borderRadius: 14,
+    padding: 12,
+    marginBottom: 14,
+  },
+  cancellationDecisionHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+  },
+  cancellationDecisionHeading: {
+    flex: 1,
+    marginLeft: 8,
+  },
+  cancellationDecisionTitle: {
+    color: "#6B3F0C",
+    fontSize: 14,
+    fontWeight: "900",
+  },
+  cancellationDecisionText: {
+    color: "#725B3D",
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 3,
+  },
+  cancellationDecisionActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    marginTop: 12,
+  },
+  declineCancellationButton: {
+    borderWidth: 1,
+    borderColor: "#B84040",
+    borderRadius: 10,
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+    marginRight: 8,
+  },
+  declineCancellationText: {
+    color: "#B84040",
+    fontSize: 12,
+    fontWeight: "800",
+  },
+  approveCancellationButton: {
+    minWidth: 145,
+    backgroundColor: "#B84040",
+    borderRadius: 10,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 12,
+    paddingVertical: 9,
+  },
+  approveCancellationText: {
+    color: "#fff",
+    fontSize: 12,
+    fontWeight: "800",
   },
   modalItemsBox: {
     backgroundColor: "#fff",
