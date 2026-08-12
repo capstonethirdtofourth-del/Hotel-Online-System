@@ -33,6 +33,7 @@ import {
   releaseBookingLocksAndUpdateStatus,
 } from "./services/bookingLockService";
 import { updateActivityStatus } from "./services/activityStatusService";
+import { signOutGoogleSession } from "./services/googleAuthService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -180,7 +181,18 @@ function MainLayout({
 
   const handleLogout = async () => {
     try {
+      const signedInWithGoogle =
+        currentUser?.providerData?.some(
+          (provider) =>
+            provider.providerId === "google.com"
+        );
+
+      if (signedInWithGoogle) {
+        await signOutGoogleSession();
+      }
+
       await signOut(auth);
+
       navigation.reset({
         index: 0,
         routes: [{ name: "Welcome" }],
@@ -699,13 +711,66 @@ export default function App() {
 
         if (!isMounted) return;
 
+        let resolvedUserData = null;
+
         if (!userSnap.exists()) {
-          throw new Error("User profile not found.");
+          const signedInWithGoogle =
+            user.providerData?.some(
+              (provider) =>
+                provider.providerId === "google.com"
+            );
+
+          if (!signedInWithGoogle) {
+            throw new Error(
+              "User profile not found."
+            );
+          }
+
+          // IMPORTANT:
+          // googleAuthService is the ONLY place that creates a brand-new
+          // Google user's Firestore profile.
+          //
+          // onAuthStateChanged can fire immediately after Firebase Auth
+          // signs the Google user in, a little before googleAuthService has
+          // finished setDoc(users/{uid}). Do not create the profile here too;
+          // two concurrent setDoc calls can turn the second one into an
+          // UPDATE and be rejected by the stricter Firestore update rule.
+          let googleProfileSnap = userSnap;
+
+          for (
+            let attempt = 0;
+            attempt < 12 && !googleProfileSnap.exists();
+            attempt += 1
+          ) {
+            await new Promise((resolve) =>
+              setTimeout(resolve, 200)
+            );
+
+            if (!isMounted) return;
+
+            googleProfileSnap =
+              await getDoc(userRef);
+          }
+
+          if (!googleProfileSnap.exists()) {
+            throw new Error(
+              "Google account authenticated, but the Firestore user profile was not created."
+            );
+          }
+
+          resolvedUserData =
+            googleProfileSnap.data();
+        } else {
+          resolvedUserData =
+            userSnap.data();
         }
 
+        if (!isMounted) return;
+
         // Set the profile before allowing NavigationContainer to mount.
-        // MainShell can now choose AdminDashboard on its first render.
-        setUserData(userSnap.data());
+        // Existing admin roles are preserved because an existing document
+        // is never overwritten by the Google bootstrap.
+        setUserData(resolvedUserData);
         setCurrentUser(user);
         setInitialRoute("Main");
       } catch (error) {

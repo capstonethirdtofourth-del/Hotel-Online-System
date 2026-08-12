@@ -1,0 +1,47 @@
+{
+  "project_info": {
+    "project_number": "160477152877",
+    "project_id": "hotel-online-system",
+    "storage_bucket": "hotel-online-system.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:160477152877:android:d026251fccd556dbf62164",
+        "android_client_info": {
+          "package_name": "com.anonymous.OnlineHotelManagementSystem"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "160477152877-iegq0kei1shd0gesq53c38lasdlt8kko.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.anonymous.OnlineHotelManagementSystem",
+            "certificate_hash": "a63188407d29d498412627cb0081498d3714e1a7"
+          }
+        },
+        {
+          "client_id": "160477152877-1t4267v6ckubl9q7vdjlj98elu698k6j.apps.googleusercontent.com",
+          "client_type": 3
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBqPEYQQOyI235KZ0wnyJPa_QyMNe5y8jE"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": [
+            {
+              "client_id": "160477152877-1t4267v6ckubl9q7vdjlj98elu698k6j.apps.googleusercontent.com",
+              "client_type": 3
+            }
+          ]
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
