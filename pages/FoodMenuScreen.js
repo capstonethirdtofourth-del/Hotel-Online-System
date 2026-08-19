@@ -715,6 +715,7 @@ export default function FoodMenuScreen() {
         <Ionicons name="search" size={20} color="#777" />
         <TextInput
           placeholder="Search food..."
+          placeholderTextColor="#8A7768"
           value={search}
           onChangeText={setSearch}
           style={styles.searchInput}

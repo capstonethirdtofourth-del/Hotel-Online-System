@@ -1,4 +1,5 @@
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   FlatList,
   Modal,
@@ -101,6 +102,7 @@ export default function GuestNotificationsModal({
   onClose,
   onClear,
 }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal
       visible={visible}
@@ -108,7 +110,7 @@ export default function GuestNotificationsModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <TouchableOpacity
           style={styles.backdrop}
           activeOpacity={1}

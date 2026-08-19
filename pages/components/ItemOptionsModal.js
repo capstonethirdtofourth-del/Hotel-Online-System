@@ -1,4 +1,5 @@
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -27,6 +28,7 @@ export default function ItemOptionsModal({
   addingToCart,
   onConfirmAddToCart,
 }) {
+  const insets = useSafeAreaInsets();
   const decreaseQuantity = () => {
     setSelectedQty((currentQuantity) =>
       Math.max(MIN_QUANTITY, currentQuantity - 1)
@@ -49,7 +51,7 @@ export default function ItemOptionsModal({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.optionModal}>
           <View style={styles.header}>
             <Text style={styles.title}>Customize Order</Text>

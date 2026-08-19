@@ -294,6 +294,7 @@ export default function RegisterScreen({
           <TextInput
             style={styles.input}
             placeholder="Full Name"
+            placeholderTextColor="#8A7768"
             value={fullName}
             onChangeText={setFullName}
             editable={!busy}
@@ -302,6 +303,7 @@ export default function RegisterScreen({
           <TextInput
             style={styles.input}
             placeholder="Email Address"
+            placeholderTextColor="#8A7768"
             keyboardType="email-address"
             autoCapitalize="none"
             autoCorrect={false}
@@ -313,6 +315,7 @@ export default function RegisterScreen({
           <TextInput
             style={styles.input}
             placeholder="Phone Number"
+            placeholderTextColor="#8A7768"
             keyboardType="phone-pad"
             value={phone}
             onChangeText={setPhone}
@@ -323,6 +326,7 @@ export default function RegisterScreen({
             <TextInput
               style={styles.passwordInput}
               placeholder="Password"
+              placeholderTextColor="#8A7768"
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
@@ -353,6 +357,7 @@ export default function RegisterScreen({
             <TextInput
               style={styles.passwordInput}
               placeholder="Confirm Password"
+              placeholderTextColor="#8A7768"
               secureTextEntry={
                 !showConfirmPassword
               }

@@ -1,4 +1,5 @@
 import React, { useMemo, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Modal,
@@ -138,6 +139,7 @@ export default function ActivityStatusModal({
   cancellingOrderId,
   cancellingRequestId,
 }) {
+  const insets = useSafeAreaInsets();
   const [activeTab, setActiveTab] = useState("orders");
 
   const sortedOrders = useMemo(
@@ -395,7 +397,7 @@ export default function ActivityStatusModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.modalCard}>
           <View style={styles.header}>
             <View>

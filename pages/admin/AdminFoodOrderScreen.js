@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -77,6 +78,7 @@ function matchesFilter(order, filter) {
 }
 
 export default function AdminFoodOrderScreen() {
+  const insets = useSafeAreaInsets();
   const [orders, setOrders] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("all");
@@ -413,7 +415,7 @@ export default function AdminFoodOrderScreen() {
         animationType="slide"
         onRequestClose={closeOrder}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -576,6 +578,7 @@ export default function AdminFoodOrderScreen() {
                   value={estimatedMinutes}
                   onChangeText={(value) => setEstimatedMinutes(value.replace(/[^0-9]/g, ""))}
                   placeholder="Custom minutes (optional)"
+                  placeholderTextColor="#8A7768"
                   keyboardType="number-pad"
                   editable={
                     !saving &&
@@ -589,6 +592,7 @@ export default function AdminFoodOrderScreen() {
                   value={statusMessage}
                   onChangeText={setStatusMessage}
                   placeholder="Example: Your food is being prepared."
+                  placeholderTextColor="#8A7768"
                   multiline
                   textAlignVertical="top"
                   editable={

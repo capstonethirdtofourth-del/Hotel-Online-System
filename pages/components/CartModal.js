@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -22,6 +23,7 @@ export default function CartModal({
   onPlaceOrder,
   placingOrder,
 }) {
+  const insets = useSafeAreaInsets();
   const [editingItemId, setEditingItemId] = useState(null);
   const [preferenceDraft, setPreferenceDraft] = useState("");
   const [savingPreferenceId, setSavingPreferenceId] = useState(null);
@@ -71,7 +73,7 @@ export default function CartModal({
       transparent={true}
       onRequestClose={onClose}
     >
-      <View style={styles.modalOverlay}>
+      <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.cartModal}>
           <View style={styles.cartHeader}>
             <Text style={styles.cartTitle}>Your Order</Text>

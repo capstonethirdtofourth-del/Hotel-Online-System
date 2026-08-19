@@ -1,4 +1,5 @@
 import React, { useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -18,6 +19,7 @@ export default function OrdersModal({
   onCancelOrder,
   cancellingOrderId,
 }) {
+  const insets = useSafeAreaInsets();
   const [cancelModalVisible, setCancelModalVisible] = useState(false);
   const [selectedOrder, setSelectedOrder] = useState(null);
 
@@ -51,7 +53,7 @@ export default function OrdersModal({
         transparent={true}
         onRequestClose={onClose}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.ordersModal}>
             <View style={styles.header}>
               <Text style={styles.title}>My Orders</Text>
@@ -119,7 +121,7 @@ export default function OrdersModal({
         visible={cancelModalVisible}
         onRequestClose={closeCancelModal}
       >
-        <View style={styles.confirmOverlay}>
+        <View style={[styles.confirmOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.confirmModal}>
             <Text style={styles.confirmTitle}>Cancel Order?</Text>
 

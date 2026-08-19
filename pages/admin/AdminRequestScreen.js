@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -79,6 +80,7 @@ function matchesFilter(request, filter) {
 }
 
 export default function AdminRequestScreen() {
+  const insets = useSafeAreaInsets();
   const [requests, setRequests] = useState([]);
   const [loading, setLoading] = useState(true);
   const [activeFilter, setActiveFilter] = useState("all");
@@ -412,7 +414,7 @@ export default function AdminRequestScreen() {
         animationType="slide"
         onRequestClose={closeRequest}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <View style={{ flex: 1 }}>
@@ -561,6 +563,7 @@ export default function AdminRequestScreen() {
                     setEstimatedMinutes(value.replace(/[^0-9]/g, ""))
                   }
                   placeholder="Custom minutes (optional)"
+                  placeholderTextColor="#8A7768"
                   keyboardType="number-pad"
                   editable={
                     !saving &&
@@ -574,6 +577,7 @@ export default function AdminRequestScreen() {
                   value={statusMessage}
                   onChangeText={setStatusMessage}
                   placeholder="Example: Housekeeping is on the way."
+                  placeholderTextColor="#8A7768"
                   multiline
                   textAlignVertical="top"
                   editable={

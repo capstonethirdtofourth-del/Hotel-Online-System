@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   ActivityIndicator,
   Alert,
@@ -210,6 +211,7 @@ export default function BookingDetailsModal({
   onConfirmBooking,
   unavailableBookings = [],
 }) {
+  const insets = useSafeAreaInsets();
   const [checkInDate, setCheckInDate] = useState(null);
   const [checkOutDate, setCheckOutDate] = useState(null);
   const [checkInTime, setCheckInTime] = useState(new Date());
@@ -593,7 +595,7 @@ export default function BookingDetailsModal({
 
   return (
     <Modal visible={visible} animationType="slide" transparent>
-      <View style={styles.overlay}>
+      <View style={[styles.overlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.modalContainer}>
           <View style={styles.header}>
             <View>
@@ -813,6 +815,7 @@ export default function BookingDetailsModal({
               multiline
               numberOfLines={4}
               placeholder="Example: extra towel, quiet room, near window..."
+              placeholderTextColor="#8A7768"
               value={specialRequest}
               onChangeText={setSpecialRequest}
             />

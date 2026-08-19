@@ -1,4 +1,5 @@
 import React, { useEffect, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -100,6 +101,7 @@ const SHARED_RESTROOM_IMAGES = [
 ];
 
 export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
+  const insets = useSafeAreaInsets();
   const { width: windowWidth } = useWindowDimensions();
   const galleryWidth = Math.max(windowWidth - 36, 1);
 
@@ -613,7 +615,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         animationType="slide"
         onRequestClose={closeRoomModal}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.roomModal}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedRoom?.name}</Text>
@@ -818,7 +820,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         animationType="fade"
         onRequestClose={() => setRatingModalVisible(false)}
       >
-        <View style={styles.ratingModalOverlay}>
+        <View style={[styles.ratingModalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.ratingModalBox}>
             <Text style={styles.ratingModalTitle}>Rate this room</Text>
             <Text style={styles.ratingModalSubtitle}>{selectedRoom?.name}</Text>

@@ -1,4 +1,5 @@
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Modal,
   View,
@@ -9,9 +10,10 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 
 export default function InfoModal({ visible, onClose }) {
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View style={styles.sheetOverlay}>
+      <View style={[styles.sheetOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.sheetModal}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Hotel Information</Text>

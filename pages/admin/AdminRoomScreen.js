@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useState } from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   View,
   Text,
@@ -20,11 +21,16 @@ import {
   serverTimestamp,
 } from "firebase/firestore";
 import { auth, db } from "../../FirebaseConfig";
-import { releaseBookingLocksAndUpdateStatus } from "../../services/bookingLockService";
+import {
+  createBookingWithNightLocks,
+  releaseBookingLocksAndUpdateStatus,
+} from "../../services/bookingLockService";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Calendar } from "react-native-calendars";
+import BookingDetailsModal from "../components/BookingDetailsModal";
 
 export default function AdminRoomScreen() {
+  const insets = useSafeAreaInsets();
   const [rooms, setRooms] = useState([]);
   const [bookings, setBookings] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -40,6 +46,8 @@ export default function AdminRoomScreen() {
 
   const [guestName, setGuestName] = useState("");
   const [guestPhone, setGuestPhone] = useState("");
+  const [manualBookingModalVisible, setManualBookingModalVisible] =
+    useState(false);
   const [processingAction, setProcessingAction] = useState(null);
 
   const isProcessing = processingAction !== null;
@@ -196,9 +204,13 @@ export default function AdminRoomScreen() {
       );
 
       if (latestBooking) {
+        // Replace the temporary local copy with the authoritative
+        // Firestore snapshot as soon as the realtime listener receives it.
         setSelectedBooking(latestBooking);
-      } else {
+      } else if (!selectedBooking?._localJustCreated) {
         // The booking may have just been cancelled or checked out.
+        // A newly-created manual booking is temporarily kept here until
+        // its onSnapshot update arrives.
         setSelectedBooking(null);
       }
     }
@@ -380,13 +392,14 @@ export default function AdminRoomScreen() {
     setReservationSearch("");
     setReservationDateFilter("all");
     setCalendarVisible(false);
+    setManualBookingModalVisible(false);
     setGuestName("");
     setGuestPhone("");
     setProcessingAction(null);
     setRoomModalVisible(false);
   };
 
-  const handleBookRoom = async () => {
+  const handleBookRoom = () => {
     if (!selectedRoom || isProcessing) return;
 
     if (!guestName.trim()) {
@@ -394,37 +407,120 @@ export default function AdminRoomScreen() {
       return;
     }
 
-    try {
-      setProcessingAction("book");
+    // Do not create the Firestore document yet.
+    // First open the same full booking form used by the guest flow so the
+    // admin must choose a valid stay range, guest count, and add-ons.
+    setManualBookingModalVisible(true);
+  };
 
-      await addDoc(collection(db, "roomBookings"), {
-        userId: "admin",
-        userEmail: "admin",
+  const handleConfirmManualBooking = async (bookingData) => {
+    if (!selectedRoom || !auth.currentUser) {
+      Alert.alert(
+        "Unable to Create Booking",
+        "The admin account or selected room is unavailable."
+      );
+      return false;
+    }
+
+    if (!guestName.trim()) {
+      Alert.alert("Missing Guest Name", "Please enter the guest name.");
+      return false;
+    }
+
+    if (!bookingData?.checkInDate || !bookingData?.checkOutDate) {
+      Alert.alert(
+        "Select Stay Dates",
+        "Please choose both check-in and check-out dates."
+      );
+      return false;
+    }
+
+    try {
+      const adminUser = auth.currentUser;
+
+      const manualBookingPayload = {
+        ...bookingData,
+
+        // A manual reservation is created by the signed-in administrator.
+        // The guest's typed identity is kept in the normal guest fields.
+        userId: adminUser.uid,
+        userEmail: adminUser.email || "admin",
         userFullName: guestName.trim(),
         userPhone: guestPhone.trim() || "",
+
         roomId: selectedRoom.id,
         roomName: selectedRoom.name,
         name: selectedRoom.name,
         price: selectedRoom.price,
-        image: selectedRoom.image,
+        image: selectedRoom.image || "",
+        imageKey: selectedRoom.imageKey || "",
         amenities: selectedRoom.amenities || [],
         roomNumber: selectedRoom.roomNumber || "",
+
         guestName: guestName.trim(),
         guestPhone: guestPhone.trim() || "",
+
         status: "booked",
+        checkInAt: null,
+        checkOutAt: null,
+
         reservedAt: serverTimestamp(),
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
 
-      Alert.alert("Success", "Manual booking created successfully.");
-      closeRoomModal();
+      // Use the same atomic date-range locking used by guest bookings.
+      // This prevents the admin from manually reserving a room-night that
+      // another reservation already owns.
+      return await createBookingWithNightLocks(manualBookingPayload);
     } catch (error) {
-      console.log("Error booking room:", error);
-      Alert.alert("Error", "Failed to book room.");
-    } finally {
-      setProcessingAction(null);
+      console.log("Error creating manual booking:", error);
+
+      if (error.code === "booking/date-conflict") {
+        Alert.alert(
+          "Dates Unavailable",
+          `This room is already reserved on ${
+            error.conflictDate || "one of the selected dates"
+          }. Please choose a different stay range.`
+        );
+      } else if (
+        error.code === "booking/invalid-date" ||
+        error.code === "booking/invalid-range" ||
+        error.code === "booking/missing-dates" ||
+        error.code === "booking/stay-too-long"
+      ) {
+        Alert.alert(
+          "Invalid Stay Dates",
+          error.message || "Please select a valid stay range."
+        );
+      } else if (error.code === "permission-denied") {
+        Alert.alert(
+          "Permission Error",
+          "The admin account is not allowed to create this reservation or its room-night locks."
+        );
+      } else {
+        Alert.alert(
+          "Booking Failed",
+          error.message || "Failed to create the manual booking."
+        );
+      }
+
+      // BookingDetailsModal treats false as "keep the modal open".
+      return false;
     }
+  };
+
+  const handleManualBookingCreated = (createdBooking) => {
+    if (!createdBooking) return;
+
+    // BookingDetailsModal closes after this callback. Keep the room
+    // management modal underneath it and immediately show the newly-created
+    // reservation's details instead of closing everything.
+    setSelectedBooking({
+      ...createdBooking,
+      _localJustCreated: true,
+    });
+    setRoomModalMode("manage");
   };
 
   const handleOccupyBookedRoom = async () => {
@@ -939,6 +1035,7 @@ export default function AdminRoomScreen() {
               value={guestName}
               onChangeText={setGuestName}
               placeholder="Enter guest name"
+              placeholderTextColor="#8A7768"
               editable={!isProcessing}
             />
 
@@ -948,6 +1045,7 @@ export default function AdminRoomScreen() {
               value={guestPhone}
               onChangeText={setGuestPhone}
               placeholder="Enter phone number optional"
+              placeholderTextColor="#8A7768"
               keyboardType="phone-pad"
               editable={!isProcessing}
             />
@@ -975,7 +1073,7 @@ export default function AdminRoomScreen() {
               disabled={isProcessing}
             >
               <Text style={styles.actionButtonText}>
-                {isBooking ? "Processing..." : "Create Manual Booking"}
+                "Continue to Booking Details"
               </Text>
             </TouchableOpacity>
           </View>
@@ -1121,6 +1219,7 @@ export default function AdminRoomScreen() {
               value={guestName}
               onChangeText={setGuestName}
               placeholder="Enter guest name"
+              placeholderTextColor="#8A7768"
               editable={!isProcessing}
             />
 
@@ -1130,6 +1229,7 @@ export default function AdminRoomScreen() {
               value={guestPhone}
               onChangeText={setGuestPhone}
               placeholder="Enter phone number optional"
+              placeholderTextColor="#8A7768"
               keyboardType="phone-pad"
               editable={!isProcessing}
             />
@@ -1220,7 +1320,7 @@ export default function AdminRoomScreen() {
         animationType="slide"
         onRequestClose={closeRoomModal}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.modalCard}>
             <View style={styles.modalHeader}>
               <Text style={styles.modalTitle}>{selectedRoom?.name}</Text>
@@ -1245,13 +1345,22 @@ export default function AdminRoomScreen() {
         </View>
       </Modal>
 
+      <BookingDetailsModal
+        visible={manualBookingModalVisible}
+        room={selectedRoom}
+        unavailableBookings={selectedRoom?.allActiveBookings || []}
+        onClose={() => setManualBookingModalVisible(false)}
+        onConfirmBooking={handleConfirmManualBooking}
+        onBookingCreated={handleManualBookingCreated}
+      />
+
       <Modal
         visible={calendarVisible}
         transparent
         animationType="fade"
         onRequestClose={() => setCalendarVisible(false)}
       >
-        <View style={styles.calendarOverlay}>
+        <View style={[styles.calendarOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
           <View style={styles.calendarCard}>
             <View style={styles.calendarHeader}>
               <View>

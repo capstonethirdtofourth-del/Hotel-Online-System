@@ -1,4 +1,5 @@
 import React from "react";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   Modal,
   View,
@@ -18,6 +19,7 @@ export default function ReservedRoomsModal({
   loadingReservedRooms = false,
   cancellingRoomId,
 }) {
+  const insets = useSafeAreaInsets();
   const formatDateTime = (timestamp) => {
     if (!timestamp?.seconds) return "Not set";
 
@@ -45,7 +47,7 @@ export default function ReservedRoomsModal({
       animationType="slide"
       onRequestClose={onClose}
     >
-      <View style={styles.sheetOverlay}>
+      <View style={[styles.sheetOverlay, { paddingBottom: Math.max(insets.bottom, 12) }]}>
         <View style={styles.sheetModal}>
           <View style={styles.sheetHeader}>
             <Text style={styles.sheetTitle}>Reserved Room</Text>
