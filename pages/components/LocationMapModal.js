@@ -33,6 +33,23 @@ export const HOTEL_MAP_EMBED_URL =
 const HOTEL_MAP_EXTERNAL_URL =
   `https://www.google.com/maps/search/?api=1&query=${ENCODED_QUERY}`;
 
+// Google Maps can send Android WebViews to an `intent://` address when the
+// user taps the embedded map. WebView cannot load that scheme by itself, so
+// extract Google's HTTPS fallback and open it outside the WebView instead.
+const getIntentFallbackUrl = (intentUrl) => {
+  const match = intentUrl.match(/S\.browser_fallback_url=([^;]+)/i);
+
+  if (!match?.[1]) {
+    return HOTEL_MAP_EXTERNAL_URL;
+  }
+
+  try {
+    return decodeURIComponent(match[1]);
+  } catch {
+    return HOTEL_MAP_EXTERNAL_URL;
+  }
+};
+
 export default function LocationMapModal({ visible, onClose }) {
   const [mapFailed, setMapFailed] = useState(false);
 
@@ -83,21 +100,47 @@ export default function LocationMapModal({ visible, onClose }) {
 
   const openExternalMap = async () => {
     try {
-      const supported = await Linking.canOpenURL(HOTEL_MAP_EXTERNAL_URL);
-
-      if (!supported) {
-        Alert.alert(
-          "Unable to Open Maps",
-          "No supported map application was found on this device."
-        );
-        return;
-      }
-
+      // Open the HTTPS link directly. On some Android builds, canOpenURL()
+      // incorrectly reports false even though Google Maps or a browser can
+      // handle the link.
       await Linking.openURL(HOTEL_MAP_EXTERNAL_URL);
     } catch (error) {
       console.log("Unable to open map:", error);
-      Alert.alert("Unable to Open Maps", "Please try again.");
+      Alert.alert(
+        "Unable to Open Maps",
+        "Google Maps could not be opened. Please check your connection and try again."
+      );
     }
+  };
+
+  const handleMapNavigation = (request) => {
+    const requestedUrl = request?.url ?? "";
+
+    if (requestedUrl.startsWith("intent://")) {
+      Linking.openURL(getIntentFallbackUrl(requestedUrl)).catch((error) => {
+        console.log("Unable to open Google Maps intent:", error);
+        Alert.alert("Unable to Open Maps", "Please try again.");
+      });
+
+      return false;
+    }
+
+    if (
+      requestedUrl.startsWith("geo:") ||
+      requestedUrl.startsWith("google.navigation:") ||
+      requestedUrl.startsWith("comgooglemaps:")
+    ) {
+      Linking.openURL(requestedUrl).catch(() => {
+        Linking.openURL(HOTEL_MAP_EXTERNAL_URL).catch((error) => {
+          console.log("Unable to open map:", error);
+          Alert.alert("Unable to Open Maps", "Please try again.");
+        });
+      });
+
+      return false;
+    }
+
+    return true;
   };
 
   const handleClose = () => {
@@ -162,6 +205,7 @@ export default function LocationMapModal({ visible, onClose }) {
               startInLoadingState
               setSupportMultipleWindows={false}
               mixedContentMode="compatibility"
+              onShouldStartLoadWithRequest={handleMapNavigation}
               onError={(event) => {
                 console.log("Map WebView error:", event.nativeEvent);
                 setMapFailed(true);
