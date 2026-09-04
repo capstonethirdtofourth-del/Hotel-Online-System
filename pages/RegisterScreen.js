@@ -324,12 +324,18 @@ export default function RegisterScreen({
 
           <View style={styles.passwordWrap}>
             <TextInput
+              key={showPassword ? "password-visible" : "password-hidden"}
               style={styles.passwordInput}
               placeholder="Password"
               placeholderTextColor="#8A7768"
               secureTextEntry={!showPassword}
               value={password}
               onChangeText={setPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              selectionColor="#6b4f3a"
               editable={!busy}
             />
 
@@ -355,6 +361,11 @@ export default function RegisterScreen({
 
           <View style={styles.passwordWrap}>
             <TextInput
+              key={
+                showConfirmPassword
+                  ? "confirm-password-visible"
+                  : "confirm-password-hidden"
+              }
               style={styles.passwordInput}
               placeholder="Confirm Password"
               placeholderTextColor="#8A7768"
@@ -365,6 +376,11 @@ export default function RegisterScreen({
               onChangeText={
                 setConfirmPassword
               }
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="new-password"
+              textContentType="newPassword"
+              selectionColor="#6b4f3a"
               editable={!busy}
             />
 
@@ -593,5 +609,7 @@ const styles = StyleSheet.create({
   passwordInput: {
     flex: 1,
     paddingVertical: 12,
+    color: "#222",
+    fontSize: 16,
   },
 });

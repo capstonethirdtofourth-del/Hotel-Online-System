@@ -1946,7 +1946,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#b84040",
   },
   checkoutButton: {
-    backgroundColor: "#2f7d4a",
+    backgroundColor: "#6b3200",
   },
   actionButtonText: {
     color: "#fff",

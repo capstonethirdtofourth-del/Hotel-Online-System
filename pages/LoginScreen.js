@@ -154,12 +154,18 @@ export default function LoginScreen({ navigation }) {
 
           <View style={styles.passwordWrap}>
             <TextInput
+              key={showPassword ? "password-visible" : "password-hidden"}
               style={styles.passwordInput}
               placeholder="Enter your password"
               placeholderTextColor="#8A7768"
               value={password}
               onChangeText={setPassword}
               secureTextEntry={!showPassword}
+              autoCapitalize="none"
+              autoCorrect={false}
+              autoComplete="password"
+              textContentType="password"
+              selectionColor="#6b4f3a"
               editable={!busy}
             />
 
@@ -306,6 +312,9 @@ const styles = StyleSheet.create({
   passwordInput: {
     flex: 1,
     marginRight: 10,
+    color: "#222",
+    fontSize: 16,
+    paddingVertical: 0,
   },
   loginBtn: {
     backgroundColor: "#6b4f3a",

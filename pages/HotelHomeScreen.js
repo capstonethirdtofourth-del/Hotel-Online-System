@@ -467,20 +467,6 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
     return activeBookingsByRoom[roomId] || [];
   };
 
-  const getRoomBadge = (roomId) => {
-    const roomBookings = getRoomBookings(roomId);
-
-    if (roomBookings.some((booking) => booking.status === "checked-in")) {
-      return "Occupied";
-    }
-
-    if (roomBookings.some((booking) => booking.status === "booked")) {
-      return "Dates Reserved";
-    }
-
-    return null;
-  };
-
   const renderRating = (
     rating = 0,
     reviewCount = 0,
@@ -510,7 +496,6 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   };
 
   const featuredRoom = rooms[0];
-  const selectedRoomBadge = getRoomBadge(selectedRoom?.id);
   const selectedRoomGallery = selectedRoom
     ? getRoomGallery(selectedRoom)
     : [];
@@ -540,19 +525,6 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
           style={styles.featuredCard}
           onPress={() => openRoomModal(featuredRoom)}
         >
-          {getRoomBadge(featuredRoom.id) && (
-            <View
-              style={[
-                styles.occupiedBadge,
-                getRoomBadge(featuredRoom.id) === "Occupied"
-                  ? styles.occupiedBadgeGreen
-                  : styles.reservedBadge,
-              ]}
-            >
-              <Text style={styles.occupiedText}>{getRoomBadge(featuredRoom.id)}</Text>
-            </View>
-          )}
-
           <Image
             source={{ uri: featuredRoom.image }}
             style={styles.featuredImage}
@@ -579,21 +551,6 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
               activeOpacity={0.9}
               onPress={() => openRoomModal(room)}
             >
-              {getRoomBadge(room.id) && (
-                <View
-                  style={[
-                    styles.occupiedBadgeSmall,
-                    getRoomBadge(room.id) === "Occupied"
-                      ? styles.occupiedBadgeGreen
-                      : styles.reservedBadge,
-                  ]}
-                >
-                  <Text style={styles.occupiedTextSmall}>
-                    {getRoomBadge(room.id)}
-                  </Text>
-                </View>
-              )}
-
               <Image source={{ uri: room.image }} style={styles.smallImage} />
 
               <View style={styles.smallPriceTag}>
@@ -771,14 +728,6 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                     </View>
                   ))}
                 </View>
-
-                {!!selectedRoomBadge && (
-                  <Text style={styles.availabilityNote}>
-                    {selectedRoomBadge === "Occupied"
-                      ? "This room is occupied now, but future dates may still be available."
-                      : "Some dates are already reserved. Open the calendar to see available dates."}
-                  </Text>
-                )}
 
                 <TouchableOpacity
                   style={[
@@ -1185,16 +1134,6 @@ const styles = StyleSheet.create({
     color: "#3d3128",
     fontWeight: "500",
   },
-  availabilityNote: {
-    backgroundColor: "#fff7ed",
-    color: "#9a3412",
-    padding: 10,
-    borderRadius: 12,
-    marginBottom: 12,
-    lineHeight: 19,
-    fontSize: 13,
-    fontWeight: "600",
-  },
   bookButton: {
     backgroundColor: "#6d4e3a",
     paddingVertical: 14,
@@ -1209,40 +1148,6 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "700",
-  },
-  occupiedBadge: {
-    position: "absolute",
-    top: 10,
-    left: 10,
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    borderRadius: 10,
-    zIndex: 2,
-  },
-  occupiedText: {
-    color: "#fff",
-    fontSize: 12,
-    fontWeight: "bold",
-  },
-  occupiedBadgeSmall: {
-    position: "absolute",
-    top: 5,
-    left: 5,
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 8,
-    zIndex: 2,
-  },
-  occupiedBadgeGreen: {
-    backgroundColor: "rgba(34, 139, 34, 0.9)",
-  },
-  reservedBadge: {
-    backgroundColor: "rgba(180, 100, 0, 0.9)",
-  },
-  occupiedTextSmall: {
-    color: "#fff",
-    fontSize: 9,
-    fontWeight: "bold",
   },
   ratingModalOverlay: {
     flex: 1,

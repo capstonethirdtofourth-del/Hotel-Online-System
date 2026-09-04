@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from "react";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -6,6 +6,8 @@ import {
   StyleSheet,
   ActivityIndicator,
   Alert,
+  Animated,
+  PanResponder,
   Pressable,
 } from "react-native";
 import { NavigationContainer } from "@react-navigation/native";
@@ -132,6 +134,10 @@ function getNotificationSortTime(notification) {
 
 
 const Stack = createNativeStackNavigator();
+const SIDE_MENU_WIDTH = 285;
+const EDGE_SWIPE_WIDTH = 30;
+const SWIPE_OPEN_DISTANCE = 75;
+const SWIPE_CLOSE_DISTANCE = 75;
 
 function MainLayout({
   navigation,
@@ -150,6 +156,97 @@ function MainLayout({
   isAdmin,
 }) {
   const [menuVisible, setMenuVisible] = useState(false);
+  const menuTranslateX = useRef(new Animated.Value(-SIDE_MENU_WIDTH)).current;
+
+  const animateMenuOpen = useCallback(() => {
+    setMenuVisible(true);
+    Animated.spring(menuTranslateX, {
+      toValue: 0,
+      useNativeDriver: true,
+      tension: 70,
+      friction: 10,
+    }).start();
+  }, [menuTranslateX]);
+
+  const animateMenuClosed = useCallback(() => {
+    Animated.timing(menuTranslateX, {
+      toValue: -SIDE_MENU_WIDTH,
+      duration: 210,
+      useNativeDriver: true,
+    }).start(({ finished }) => {
+      if (finished) {
+        setMenuVisible(false);
+      }
+    });
+  }, [menuTranslateX]);
+
+  const menuPanResponder = useMemo(
+    () =>
+      PanResponder.create({
+        onMoveShouldSetPanResponderCapture: (_, gestureState) => {
+          const isHorizontalSwipe =
+            Math.abs(gestureState.dx) > Math.abs(gestureState.dy) &&
+            Math.abs(gestureState.dx) > 8;
+
+          if (!isHorizontalSwipe) return false;
+
+          if (menuVisible) {
+            return gestureState.dx < 0;
+          }
+
+          return (
+            gestureState.x0 <= EDGE_SWIPE_WIDTH &&
+            gestureState.dx > 0
+          );
+        },
+        onPanResponderGrant: () => {
+          if (!menuVisible) {
+            menuTranslateX.setValue(-SIDE_MENU_WIDTH);
+            setMenuVisible(true);
+          }
+        },
+        onPanResponderMove: (_, gestureState) => {
+          const nextPosition = menuVisible
+            ? Math.max(-SIDE_MENU_WIDTH, Math.min(0, gestureState.dx))
+            : Math.max(
+                -SIDE_MENU_WIDTH,
+                Math.min(0, -SIDE_MENU_WIDTH + gestureState.dx)
+              );
+
+          menuTranslateX.setValue(nextPosition);
+        },
+        onPanResponderRelease: (_, gestureState) => {
+          if (menuVisible) {
+            const shouldClose =
+              gestureState.dx < -SWIPE_CLOSE_DISTANCE || gestureState.vx < -0.45;
+
+            if (shouldClose) {
+              animateMenuClosed();
+            } else {
+              animateMenuOpen();
+            }
+            return;
+          }
+
+          const shouldOpen =
+            gestureState.dx > SWIPE_OPEN_DISTANCE || gestureState.vx > 0.45;
+
+          if (shouldOpen) {
+            animateMenuOpen();
+          } else {
+            animateMenuClosed();
+          }
+        },
+        onPanResponderTerminate: () => {
+          if (menuVisible) {
+            animateMenuOpen();
+          } else {
+            animateMenuClosed();
+          }
+        },
+      }),
+    [animateMenuClosed, animateMenuOpen, menuTranslateX, menuVisible]
+  );
 
   const displayName = userData?.fullName || (isAdmin ? "Hotel Administrator" : "Guest User");
   const userEmail = currentUser?.email || "No email";
@@ -166,12 +263,12 @@ function MainLayout({
     : "H&K Hotel and Home Kafe";
 
   const changeScreenFromMenu = (screenName) => {
-    setMenuVisible(false);
+    animateMenuClosed();
     onChangeScreen(screenName);
   };
 
   const confirmLogout = () => {
-    setMenuVisible(false);
+    animateMenuClosed();
 
     Alert.alert("Logout", "Are you sure you want to log out?", [
       { text: "Cancel", style: "cancel" },
@@ -203,12 +300,15 @@ function MainLayout({
   };
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView
+      style={styles.container}
+      {...menuPanResponder.panHandlers}
+    >
       <View style={styles.header}>
         <View style={styles.topRow}>
           <TouchableOpacity
             style={styles.headerMenuButton}
-            onPress={() => setMenuVisible(true)}
+            onPress={animateMenuOpen}
             accessibilityLabel="Open navigation menu"
           >
             <Ionicons name="menu-outline" size={30} color="#fff" />
@@ -348,7 +448,12 @@ function MainLayout({
       >
         {menuVisible && (
           <View style={styles.modalOverlay}>
-            <View style={styles.sideMenu}>
+            <Animated.View
+              style={[
+                styles.sideMenu,
+                { transform: [{ translateX: menuTranslateX }] },
+              ]}
+            >
               <View style={styles.userCard}>
                 <Ionicons
                   name={isAdmin ? "shield-checkmark-outline" : "person-circle-outline"}
@@ -423,7 +528,7 @@ function MainLayout({
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      setMenuVisible(false);
+                      animateMenuClosed();
                       onOpenNotifications();
                     }}
                   >
@@ -456,7 +561,7 @@ function MainLayout({
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      setMenuVisible(false);
+                      animateMenuClosed();
                       onOpenNotifications();
                     }}
                   >
@@ -485,7 +590,7 @@ function MainLayout({
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      setMenuVisible(false);
+                      animateMenuClosed();
                       onOpenStatus();
                     }}
                   >
@@ -496,7 +601,7 @@ function MainLayout({
                   <TouchableOpacity
                     style={styles.menuItem}
                     onPress={() => {
-                      setMenuVisible(false);
+                      animateMenuClosed();
                       onOpenReservedRooms();
                     }}
                   >
@@ -513,7 +618,7 @@ function MainLayout({
               <TouchableOpacity
                 style={styles.menuItem}
                 onPress={() => {
-                  setMenuVisible(false);
+                  animateMenuClosed();
                   onOpenInfo();
                 }}
               >
@@ -531,11 +636,11 @@ function MainLayout({
                 <Ionicons name="log-out-outline" size={22} color="#b91c1c" />
                 <Text style={styles.logoutText}>Logout</Text>
               </TouchableOpacity>
-            </View>
+            </Animated.View>
 
             <Pressable
               style={styles.backdrop}
-              onPress={() => setMenuVisible(false)}
+              onPress={animateMenuClosed}
             />
           </View>
         )}
@@ -2208,7 +2313,6 @@ const styles = StyleSheet.create({
   },
   backdrop: {
     flex: 1,
-    backgroundColor: "rgba(0,0,0,0.35)",
   },
   sideMenu: {
     width: 285,
