@@ -25,6 +25,9 @@ const GOLD = "#D8B26A";
 const SOFT_GOLD = "#F5E4BF";
 const MUTED_BROWN = "#7B604D";
 const LIGHT_BORDER = "#E6D2AA";
+const MAX_ADULTS = 10;
+const MAX_CHILDREN = 10;
+const MAX_PETS = 5;
 
 const ADD_ONS = [
   {
@@ -334,8 +337,10 @@ export default function BookingDetailsModal({
     }
   };
 
-  const increase = (setter, currentValue) => {
-    setter(currentValue + 1);
+  const increase = (setter, currentValue, maximumValue) => {
+    if (currentValue < maximumValue) {
+      setter(currentValue + 1);
+    }
   };
 
   const toggleAddOn = (id) => {
@@ -434,6 +439,18 @@ export default function BookingDetailsModal({
 
     if (!auth.currentUser) {
       Alert.alert("Login Required", "Please login before booking a room.");
+      return;
+    }
+
+    if (
+      adults > MAX_ADULTS ||
+      children > MAX_CHILDREN ||
+      pets > MAX_PETS
+    ) {
+      Alert.alert(
+        "Guest Count Limit",
+        `A booking can have up to ${MAX_ADULTS} adults, ${MAX_CHILDREN} children, and ${MAX_PETS} pets.`
+      );
       return;
     }
 
@@ -729,8 +746,9 @@ export default function BookingDetailsModal({
               subtitle="Ages 18 and above"
               value={adults}
               minimumValue={1}
+              maximumValue={MAX_ADULTS}
               onDecrease={() => decrease(setAdults, adults, 1)}
-              onIncrease={() => increase(setAdults, adults)}
+              onIncrease={() => increase(setAdults, adults, MAX_ADULTS)}
             />
 
             <GuestCounter
@@ -738,8 +756,11 @@ export default function BookingDetailsModal({
               subtitle="Ages 17 and below"
               value={children}
               minimumValue={0}
+              maximumValue={MAX_CHILDREN}
               onDecrease={() => decrease(setChildren, children, 0)}
-              onIncrease={() => increase(setChildren, children)}
+              onIncrease={() =>
+                increase(setChildren, children, MAX_CHILDREN)
+              }
             />
 
             <GuestCounter
@@ -747,8 +768,9 @@ export default function BookingDetailsModal({
               subtitle="Dogs, cats, or small pets"
               value={pets}
               minimumValue={0}
+              maximumValue={MAX_PETS}
               onDecrease={() => decrease(setPets, pets, 0)}
-              onIncrease={() => increase(setPets, pets)}
+              onIncrease={() => increase(setPets, pets, MAX_PETS)}
             />
 
             {hasGuestCapacityWarning && (
@@ -869,6 +891,7 @@ function GuestCounter({
   subtitle,
   value,
   minimumValue,
+  maximumValue,
   onDecrease,
   onIncrease,
 }) {
@@ -893,7 +916,14 @@ function GuestCounter({
 
         <Text style={styles.counterValue}>{value}</Text>
 
-        <Pressable style={styles.counterButton} onPress={onIncrease}>
+        <Pressable
+          style={[
+            styles.counterButton,
+            value >= maximumValue ? styles.counterButtonDisabled : null,
+          ]}
+          onPress={onIncrease}
+          disabled={value >= maximumValue}
+        >
           <Text style={styles.counterButtonText}>+</Text>
         </Pressable>
       </View>

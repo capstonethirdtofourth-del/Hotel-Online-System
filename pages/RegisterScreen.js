@@ -15,6 +15,8 @@ import {
 } from "react-native";
 import {
   createUserWithEmailAndPassword,
+  sendEmailVerification,
+  signOut,
 } from "firebase/auth";
 import {
   doc,
@@ -133,38 +135,70 @@ export default function RegisterScreen({
   const handleRegister = async () => {
     if (!validateForm()) return;
 
+    let createdUser = null;
+
     try {
       setLoading(true);
 
       const userCredential =
         await createUserWithEmailAndPassword(
           auth,
-          email.trim(),
+          email.trim().toLowerCase(),
           password
         );
 
-      const user = userCredential.user;
+      createdUser = userCredential.user;
 
+      // Create the H&K profile first while the newly created
+      // Firebase account is still authenticated.
       await setDoc(
-        doc(db, "users", user.uid),
+        doc(db, "users", createdUser.uid),
         {
-          uid: user.uid,
+          uid: createdUser.uid,
           fullName: fullName.trim(),
           email: email
             .trim()
             .toLowerCase(),
           phone: phone.trim(),
           role: "guest",
+
+          // New email/password accounts must verify their email.
+          // App.js and LoginScreen.js use this flag so existing
+          // accounts are not unexpectedly locked out.
+          emailVerificationRequired: true,
+          registrationMethod: "email_password",
+
           createdAt: serverTimestamp(),
         }
       );
 
+      try {
+        await sendEmailVerification(createdUser);
+      } catch (verificationError) {
+        console.log(
+          "EMAIL VERIFICATION SEND ERROR:",
+          verificationError
+        );
+
+        try {
+          await signOut(auth);
+        } catch (_) {}
+
+        Alert.alert(
+          "Account Created",
+          "Your account was created, but the verification email could not be sent. Go to Login and tap “Resend verification email”."
+        );
+        return;
+      }
+
+      await signOut(auth);
+
       Alert.alert(
-        "Success",
-        "Account created successfully!",
+        "Verify Your Email",
+        "We sent a verification link to your email address. Open the email and verify your account before logging in.",
         [
           {
-            text: "OK",
+            text: "Go to Login",
             onPress: () =>
               navigation.replace("Login"),
           },
@@ -180,6 +214,12 @@ export default function RegisterScreen({
         error.message
       );
 
+      try {
+        if (auth.currentUser) {
+          await signOut(auth);
+        }
+      } catch (_) {}
+
       let message =
         error?.message ||
         "Unable to create the account.";
@@ -189,7 +229,7 @@ export default function RegisterScreen({
         "auth/email-already-in-use"
       ) {
         message =
-          "An account already uses this email.";
+          "An account already uses this email. If you registered before but have not verified it yet, go to Login and tap “Resend verification email”.";
       } else if (
         error.code ===
         "auth/invalid-email"
@@ -202,6 +242,12 @@ export default function RegisterScreen({
       ) {
         message =
           "Please use a stronger password.";
+      } else if (
+        error.code ===
+        "auth/too-many-requests"
+      ) {
+        message =
+          "Too many attempts. Please wait a while and try again.";
       }
 
       Alert.alert(
@@ -237,8 +283,6 @@ export default function RegisterScreen({
           ]
         );
       } else {
-        // The Google account already has an H&K profile, so treat the
-        // action as a normal sign-in instead of creating a duplicate.
         navigation.replace("Main");
       }
     } catch (error) {

@@ -13,7 +13,12 @@ import {
   ScrollView,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { signInWithEmailAndPassword } from "firebase/auth";
+import {
+  signInWithEmailAndPassword,
+  signOut,
+  sendEmailVerification,
+  reload,
+} from "firebase/auth";
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../FirebaseConfig";
 import { continueWithGoogle } from "../services/googleAuthService";
@@ -24,8 +29,33 @@ export default function LoginScreen({ navigation }) {
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoading, setGoogleLoading] = useState(false);
+  const [resendLoading, setResendLoading] = useState(false);
 
-  const busy = loading || googleLoading;
+  const busy = loading || googleLoading || resendLoading;
+
+  const getLoginErrorMessage = (error) => {
+    if (error.code === "auth/invalid-credential") {
+      return "Invalid email or password.";
+    }
+
+    if (error.code === "auth/user-not-found") {
+      return "No account found with that email.";
+    }
+
+    if (error.code === "auth/wrong-password") {
+      return "Incorrect password.";
+    }
+
+    if (error.code === "auth/invalid-email") {
+      return "Invalid email address.";
+    }
+
+    if (error.code === "auth/too-many-requests") {
+      return "Too many attempts. Please wait a while and try again.";
+    }
+
+    return error?.message || "Something went wrong.";
+  };
 
   const handleLogin = async () => {
     if (!email.trim() || !password) {
@@ -47,35 +77,137 @@ export default function LoginScreen({ navigation }) {
         );
 
       const user = userCredential.user;
+
+      // Refresh the Firebase user so emailVerified is current.
+      await reload(user);
+
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
 
       if (!userSnap.exists()) {
+        await signOut(auth);
+
         Alert.alert(
-          "Error",
+          "Login Failed",
           "User profile not found."
+        );
+        return;
+      }
+
+      const userData = userSnap.data();
+
+      // Only accounts registered through the new email/password
+      // registration flow are required to verify their email.
+      // Existing accounts and Google accounts are not unexpectedly locked out.
+      if (
+        userData?.emailVerificationRequired === true &&
+        !user.emailVerified
+      ) {
+        await signOut(auth);
+
+        Alert.alert(
+          "Email Not Verified",
+          "Please open the verification email we sent to you and verify your email address before logging in."
         );
         return;
       }
 
       navigation.replace("Main");
     } catch (error) {
-      let message = "Something went wrong.";
-
-      if (error.code === "auth/invalid-credential") {
-        message = "Invalid email or password.";
-      } else if (error.code === "auth/user-not-found") {
-        message =
-          "No account found with that email.";
-      } else if (error.code === "auth/wrong-password") {
-        message = "Incorrect password.";
-      } else if (error.code === "auth/invalid-email") {
-        message = "Invalid email address.";
-      }
-
-      Alert.alert("Login Failed", message);
+      Alert.alert(
+        "Login Failed",
+        getLoginErrorMessage(error)
+      );
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleResendVerification = async () => {
+    if (!email.trim() || !password) {
+      Alert.alert(
+        "Enter Your Account",
+        "Enter your email and password first, then tap Resend verification email."
+      );
+      return;
+    }
+
+    try {
+      setResendLoading(true);
+
+      const userCredential =
+        await signInWithEmailAndPassword(
+          auth,
+          email.trim(),
+          password
+        );
+
+      const user = userCredential.user;
+
+      await reload(user);
+
+      const userRef = doc(db, "users", user.uid);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        await signOut(auth);
+
+        Alert.alert(
+          "Unable to Resend",
+          "User profile not found."
+        );
+        return;
+      }
+
+      const userData = userSnap.data();
+
+      if (userData?.emailVerificationRequired !== true) {
+        await signOut(auth);
+
+        Alert.alert(
+          "Verification Not Required",
+          "This account does not require email verification."
+        );
+        return;
+      }
+
+      if (user.emailVerified) {
+        await signOut(auth);
+
+        Alert.alert(
+          "Already Verified",
+          "Your email is already verified. You can log in now."
+        );
+        return;
+      }
+
+      await sendEmailVerification(user);
+      await signOut(auth);
+
+      Alert.alert(
+        "Verification Email Sent",
+        "A new verification email has been sent. Please check your inbox and spam folder."
+      );
+    } catch (error) {
+      try {
+        if (auth.currentUser) {
+          await signOut(auth);
+        }
+      } catch (_) {}
+
+      let message = getLoginErrorMessage(error);
+
+      if (error.code === "auth/too-many-requests") {
+        message =
+          "Too many verification emails were requested. Please wait a while before trying again.";
+      }
+
+      Alert.alert(
+        "Unable to Resend",
+        message
+      );
+    } finally {
+      setResendLoading(false);
     }
   };
 
@@ -89,8 +221,6 @@ export default function LoginScreen({ navigation }) {
 
       if (result.cancelled) return;
 
-      // App.js also listens to Firebase auth state. navigation.replace()
-      // simply gives immediate feedback after the Google flow completes.
       navigation.replace("Main");
     } catch (error) {
       console.log("GOOGLE LOGIN ERROR:", error);
@@ -200,6 +330,23 @@ export default function LoginScreen({ navigation }) {
             ) : (
               <Text style={styles.loginText}>
                 Login
+              </Text>
+            )}
+          </TouchableOpacity>
+
+          <TouchableOpacity
+            style={styles.resendButton}
+            onPress={handleResendVerification}
+            disabled={busy}
+          >
+            {resendLoading ? (
+              <ActivityIndicator
+                size="small"
+                color="#6b4f3a"
+              />
+            ) : (
+              <Text style={styles.resendText}>
+                Resend verification email
               </Text>
             )}
           </TouchableOpacity>
@@ -331,10 +478,21 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: "700",
   },
+  resendButton: {
+    minHeight: 36,
+    justifyContent: "center",
+    alignItems: "center",
+    marginTop: 8,
+  },
+  resendText: {
+    color: "#6b4f3a",
+    fontSize: 13,
+    fontWeight: "700",
+  },
   dividerRow: {
     flexDirection: "row",
     alignItems: "center",
-    marginVertical: 17,
+    marginVertical: 13,
   },
   dividerLine: {
     flex: 1,

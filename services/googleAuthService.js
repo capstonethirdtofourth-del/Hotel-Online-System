@@ -9,6 +9,7 @@ import {
 import {
   GoogleAuthProvider,
   signInWithCredential,
+  signOut,
 } from "firebase/auth";
 import {
   doc,
@@ -34,18 +35,15 @@ function configureGoogleOnce() {
   googleConfigured = true;
 }
 
-async function ensureGuestProfile(firebaseUser, googleUser = null) {
-  const userRef = doc(db, "users", firebaseUser.uid);
-  const userSnap = await getDoc(userRef);
-
-  if (userSnap.exists()) {
-    // Never overwrite an existing role. This is especially important for
-    // an existing admin account that later signs in through Google.
-    return {
-      profile: userSnap.data(),
-      created: false,
-    };
-  }
+async function createGuestProfile(
+  firebaseUser,
+  googleUser = null
+) {
+  const userRef = doc(
+    db,
+    "users",
+    firebaseUser.uid
+  );
 
   const profile = {
     uid: firebaseUser.uid,
@@ -60,6 +58,8 @@ async function ensureGuestProfile(firebaseUser, googleUser = null) {
     ).toLowerCase(),
     phone: firebaseUser.phoneNumber || "",
     role: "guest",
+    registrationMethod: "google",
+    emailVerificationRequired: false,
   };
 
   await setDoc(userRef, {
@@ -67,16 +67,43 @@ async function ensureGuestProfile(firebaseUser, googleUser = null) {
     createdAt: serverTimestamp(),
   });
 
-  return {
-    profile,
-    created: true,
-  };
+  return profile;
+}
+
+async function clearGoogleLoginSession() {
+  // Clear the Firebase session first so App.js no longer considers the
+  // Google account authenticated.
+  try {
+    await signOut(auth);
+  } catch (error) {
+    console.log(
+      "Firebase sign-out skipped:",
+      error?.message || error
+    );
+  }
+
+  // Also clear the native Google session/account selection.
+  try {
+    configureGoogleOnce();
+    await GoogleOneTapSignIn.signOut();
+  } catch (error) {
+    console.log(
+      "Google native sign-out skipped:",
+      error?.message || error
+    );
+  }
 }
 
 export async function continueWithGoogle({
   mode = "login",
 } = {}) {
   configureGoogleOnce();
+
+  if (!["login", "register"].includes(mode)) {
+    throw new Error(
+      "Invalid Google authentication mode."
+    );
+  }
 
   try {
     // On iOS this resolves immediately; on Android it checks Google Play
@@ -87,15 +114,20 @@ export async function continueWithGoogle({
 
     if (mode === "register") {
       // Account-picker / sign-up-oriented flow.
-      response = await GoogleOneTapSignIn.createAccount();
+      response =
+        await GoogleOneTapSignIn.createAccount();
 
-      if (isNoSavedCredentialFoundResponse(response)) {
-        response = await GoogleOneTapSignIn.presentExplicitSignIn();
+      if (
+        isNoSavedCredentialFoundResponse(response)
+      ) {
+        response =
+          await GoogleOneTapSignIn.presentExplicitSignIn();
       }
     } else {
-      // Explicit UI is preferable for a visible "Continue with Google"
-      // button because the user can intentionally choose an account.
-      response = await GoogleOneTapSignIn.presentExplicitSignIn();
+      // Login should only authenticate a Google account.
+      // It must NOT create an H&K Firestore user profile.
+      response =
+        await GoogleOneTapSignIn.presentExplicitSignIn();
     }
 
     if (isCancelledResponse(response)) {
@@ -123,8 +155,7 @@ export async function continueWithGoogle({
       );
     }
 
-    // Exchange Google's ID token for a normal Firebase Authentication
-    // session. The rest of H&K can keep using auth.currentUser as before.
+    // Exchange Google's ID token for a Firebase Authentication session.
     const googleCredential =
       GoogleAuthProvider.credential(idToken);
 
@@ -134,37 +165,84 @@ export async function continueWithGoogle({
         googleCredential
       );
 
-    const firebaseUser = userCredential.user;
+    const firebaseUser =
+      userCredential.user;
 
-    let profileResult;
+    const userRef = doc(
+      db,
+      "users",
+      firebaseUser.uid
+    );
 
-    try {
-      profileResult =
-        await ensureGuestProfile(
-          firebaseUser,
-          googleUser
-        );
-    } catch (profileError) {
-      console.log(
-        "GOOGLE FIRESTORE PROFILE ERROR:",
-        profileError?.code,
-        profileError?.message
-      );
-      throw profileError;
+    const userSnap =
+      await getDoc(userRef);
+
+    // =========================================================
+    // LOGIN MODE
+    // =========================================================
+    // Firebase/Google authentication alone is NOT enough to count as
+    // an H&K registration. The Firestore profile must already exist.
+    if (mode === "login") {
+      if (!userSnap.exists()) {
+        await clearGoogleLoginSession();
+
+        const notRegisteredError =
+          new Error(
+            "This Google account is not registered in H&K Home Kafe. Please register first."
+          );
+
+        notRegisteredError.code =
+          "google/account-not-registered";
+
+        throw notRegisteredError;
+      }
+
+      return {
+        cancelled: false,
+        created: false,
+        user: firebaseUser,
+        profile: userSnap.data(),
+      };
     }
 
-    const { profile, created } =
-      profileResult;
+    // =========================================================
+    // REGISTER MODE
+    // =========================================================
+    // If the H&K profile already exists, this account was previously
+    // registered and should use Login instead.
+    if (userSnap.exists()) {
+      await clearGoogleLoginSession();
+
+      const alreadyRegisteredError =
+        new Error(
+          "This Google account is already registered in H&K Home Kafe. Please log in instead."
+        );
+
+      alreadyRegisteredError.code =
+        "google/account-already-registered";
+
+      throw alreadyRegisteredError;
+    }
+
+    // ONLY Register mode is allowed to create /users/{uid}.
+    const profile =
+      await createGuestProfile(
+        firebaseUser,
+        googleUser
+      );
 
     return {
       cancelled: false,
-      created,
+      created: true,
       user: firebaseUser,
       profile,
     };
   } catch (error) {
     if (isErrorWithCode(error)) {
-      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
+      if (
+        error.code ===
+        statusCodes.SIGN_IN_CANCELLED
+      ) {
         return {
           cancelled: true,
           created: false,
@@ -172,11 +250,15 @@ export async function continueWithGoogle({
         };
       }
 
-      if (error.code === statusCodes.DEVELOPER_ERROR) {
+      if (
+        error.code ===
+        statusCodes.DEVELOPER_ERROR
+      ) {
         const setupError = new Error(
           "Google Sign-In configuration does not match this Android build. Check the Android package name, EAS keystore SHA-1, Firebase Android app, and google-services.json."
         );
-        setupError.code = "google/developer-error";
+        setupError.code =
+          "google/developer-error";
         throw setupError;
       }
 
@@ -184,9 +266,10 @@ export async function continueWithGoogle({
         error.code ===
         statusCodes.PLAY_SERVICES_NOT_AVAILABLE
       ) {
-        const playServicesError = new Error(
-          "Google Play Services is unavailable or needs to be updated on this device."
-        );
+        const playServicesError =
+          new Error(
+            "Google Play Services is unavailable or needs to be updated on this device."
+          );
         playServicesError.code =
           "google/play-services-unavailable";
         throw playServicesError;
@@ -202,12 +285,11 @@ export async function signOutGoogleSession() {
     configureGoogleOnce();
     await GoogleOneTapSignIn.signOut();
   } catch (error) {
-    // Firebase logout should still continue even if Google has no active
-    // native session.
+    // Firebase logout in App.js should still continue even if Google has no
+    // active native session.
     console.log(
       "Google native sign-out skipped:",
       error?.message || error
     );
   }
 }
-  

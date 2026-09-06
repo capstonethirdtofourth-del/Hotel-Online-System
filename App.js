@@ -14,7 +14,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, reload } from "firebase/auth";
 import {
   collection,
   getDocs,
@@ -785,14 +785,14 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!isMounted) return;
 
-      // Do not mount Main as a guest while the saved user's Firestore role
-      // is still being fetched. Keep the app on the neutral loading screen.
+      // Stop guest/admin listeners while authentication is being checked.
+      // This prevents the app from briefly using a stale user session.
       setAuthBootstrapping(true);
       setInitialRoute(null);
+      setCurrentUser(null);
+      setUserData(null);
 
       if (!user) {
-        setCurrentUser(null);
-        setUserData(null);
         setReservedRooms([]);
         setUserOrders([]);
         setUserRequests([]);
@@ -801,10 +801,12 @@ export default function App() {
         lifecycleRefreshNotificationIdsRef.current = new Set();
         setRequestStatusBanner(null);
         setGuestNotificationsVisible(false);
+
         if (notificationBannerTimerRef.current) {
           clearTimeout(notificationBannerTimerRef.current);
           notificationBannerTimerRef.current = null;
         }
+
         setInitialRoute("Welcome");
         setAuthBootstrapping(false);
         return;
@@ -812,78 +814,73 @@ export default function App() {
 
       try {
         const userRef = doc(db, "users", user.uid);
-        const userSnap = await getDoc(userRef);
 
-        if (!isMounted) return;
+        // Firebase Auth changes state immediately after registration/sign-in.
+        // Give RegisterScreen/googleAuthService a moment to finish creating
+        // the matching Firestore profile.
+        let userSnap = await getDoc(userRef);
 
-        let resolvedUserData = null;
+        for (
+          let attempt = 0;
+          attempt < 12 && !userSnap.exists();
+          attempt += 1
+        ) {
+          await new Promise((resolve) =>
+            setTimeout(resolve, 200)
+          );
 
-        if (!userSnap.exists()) {
-          const signedInWithGoogle =
-            user.providerData?.some(
-              (provider) =>
-                provider.providerId === "google.com"
-            );
+          if (!isMounted) return;
 
-          if (!signedInWithGoogle) {
-            throw new Error(
-              "User profile not found."
-            );
-          }
-
-          // IMPORTANT:
-          // googleAuthService is the ONLY place that creates a brand-new
-          // Google user's Firestore profile.
-          //
-          // onAuthStateChanged can fire immediately after Firebase Auth
-          // signs the Google user in, a little before googleAuthService has
-          // finished setDoc(users/{uid}). Do not create the profile here too;
-          // two concurrent setDoc calls can turn the second one into an
-          // UPDATE and be rejected by the stricter Firestore update rule.
-          let googleProfileSnap = userSnap;
-
-          for (
-            let attempt = 0;
-            attempt < 12 && !googleProfileSnap.exists();
-            attempt += 1
-          ) {
-            await new Promise((resolve) =>
-              setTimeout(resolve, 200)
-            );
-
-            if (!isMounted) return;
-
-            googleProfileSnap =
-              await getDoc(userRef);
-          }
-
-          if (!googleProfileSnap.exists()) {
-            throw new Error(
-              "Google account authenticated, but the Firestore user profile was not created."
-            );
-          }
-
-          resolvedUserData =
-            googleProfileSnap.data();
-        } else {
-          resolvedUserData =
-            userSnap.data();
+          userSnap = await getDoc(userRef);
         }
 
         if (!isMounted) return;
 
-        // Set the profile before allowing NavigationContainer to mount.
-        // Existing admin roles are preserved because an existing document
-        // is never overwritten by the Google bootstrap.
+        if (!userSnap.exists()) {
+          throw new Error("User profile not found.");
+        }
+
+        const resolvedUserData = userSnap.data();
+
+        // New email/password registrations are marked with this field.
+        // Refresh the Firebase user first so emailVerified is current after
+        // the user clicks the verification link.
+        if (
+          resolvedUserData?.emailVerificationRequired === true
+        ) {
+          await reload(user);
+
+          if (!user.emailVerified) {
+            setReservedRooms([]);
+            setUserOrders([]);
+            setUserRequests([]);
+            setInitialRoute("Login");
+            return;
+          }
+        }
+
+        if (!isMounted) return;
+
         setUserData(resolvedUserData);
         setCurrentUser(user);
         setInitialRoute("Main");
       } catch (error) {
         console.log("Error fetching user data:", error);
+
         Alert.alert(
           "Account Loading Failed",
-          "Your saved account was found, but its profile could not be loaded. Please check your connection and reopen the app."
+          "Your account could not be opened because its H&K profile was not found or could not be loaded."
         );
+
+        try {
+          await signOut(auth);
+        } catch (_) {}
+
+        if (!isMounted) return;
+
+        setCurrentUser(null);
+        setUserData(null);
+        setInitialRoute("Welcome");
       } finally {
         if (isMounted) {
           setAuthBootstrapping(false);
