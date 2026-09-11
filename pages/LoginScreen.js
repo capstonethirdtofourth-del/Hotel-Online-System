@@ -22,6 +22,11 @@ import {
 import { doc, getDoc } from "firebase/firestore";
 import { auth, db } from "../FirebaseConfig";
 import { continueWithGoogle } from "../services/googleAuthService";
+import {
+  beginTemporaryAuthFlow,
+  endTemporaryAuthFlow,
+  markTemporaryAuthPostSignOutRoute,
+} from "../services/authFlowService";
 
 export default function LoginScreen({ navigation }) {
   const [email, setEmail] = useState("");
@@ -78,9 +83,27 @@ export default function LoginScreen({ navigation }) {
 
       const user = userCredential.user;
 
-      // Refresh the Firebase user so emailVerified is current.
+      // Always refresh Firebase first so emailVerified reflects the latest
+      // verification state from Firebase Authentication.
       await reload(user);
 
+      // IMPORTANT:
+      // This Login button is email/password login, so verification is
+      // mandatory regardless of any Firestore profile field.
+      //
+      // Do not rely on emailVerificationRequired here. If a profile field is
+      // missing or old, an unverified email must STILL be blocked.
+      if (!user.emailVerified) {
+        await signOut(auth);
+
+        Alert.alert(
+          "Email Not Verified",
+          "Please verify your email address before logging in. Check your inbox or use “Resend verification email”."
+        );
+        return;
+      }
+
+      // Only after verification succeeds do we load the H&K profile.
       const userRef = doc(db, "users", user.uid);
       const userSnap = await getDoc(userRef);
 
@@ -89,25 +112,7 @@ export default function LoginScreen({ navigation }) {
 
         Alert.alert(
           "Login Failed",
-          "User profile not found."
-        );
-        return;
-      }
-
-      const userData = userSnap.data();
-
-      // Only accounts registered through the new email/password
-      // registration flow are required to verify their email.
-      // Existing accounts and Google accounts are not unexpectedly locked out.
-      if (
-        userData?.emailVerificationRequired === true &&
-        !user.emailVerified
-      ) {
-        await signOut(auth);
-
-        Alert.alert(
-          "Email Not Verified",
-          "Please open the verification email we sent to you and verify your email address before logging in."
+          "Your H&K account profile could not be found."
         );
         return;
       }
@@ -132,6 +137,10 @@ export default function LoginScreen({ navigation }) {
       return;
     }
 
+    // Resending requires Firebase to authenticate the account temporarily.
+    // App.js must ignore that temporary session and must never open Main.
+    beginTemporaryAuthFlow();
+
     try {
       setResendLoading(true);
 
@@ -146,42 +155,55 @@ export default function LoginScreen({ navigation }) {
 
       await reload(user);
 
-      const userRef = doc(db, "users", user.uid);
-      const userSnap = await getDoc(userRef);
-
-      if (!userSnap.exists()) {
-        await signOut(auth);
-
-        Alert.alert(
-          "Unable to Resend",
-          "User profile not found."
-        );
-        return;
-      }
-
-      const userData = userSnap.data();
-
-      if (userData?.emailVerificationRequired !== true) {
-        await signOut(auth);
-
-        Alert.alert(
-          "Verification Not Required",
-          "This account does not require email verification."
-        );
-        return;
-      }
-
+      // This button is only for email/password accounts that have not
+      // completed email verification yet.
       if (user.emailVerified) {
+        markTemporaryAuthPostSignOutRoute(
+          "Login"
+        );
+
         await signOut(auth);
 
         Alert.alert(
           "Already Verified",
-          "Your email is already verified. You can log in now."
+          "Your email is already verified. You can log in normally."
+        );
+        return;
+      }
+
+      const userRef = doc(
+        db,
+        "users",
+        user.uid
+      );
+
+      const userSnap =
+        await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        markTemporaryAuthPostSignOutRoute(
+          "Login"
+        );
+
+        await signOut(auth);
+
+        Alert.alert(
+          "Unable to Resend",
+          "Your H&K account profile could not be found."
         );
         return;
       }
 
       await sendEmailVerification(user);
+
+      // IMPORTANT:
+      // Mark this sign-out as a temporary verification operation so App.js
+      // keeps the Login screen mounted instead of treating it like a normal
+      // logout or real login.
+      markTemporaryAuthPostSignOutRoute(
+        "Login"
+      );
+
       await signOut(auth);
 
       Alert.alert(
@@ -191,13 +213,20 @@ export default function LoginScreen({ navigation }) {
     } catch (error) {
       try {
         if (auth.currentUser) {
+          markTemporaryAuthPostSignOutRoute(
+            "Login"
+          );
           await signOut(auth);
         }
       } catch (_) {}
 
-      let message = getLoginErrorMessage(error);
+      let message =
+        getLoginErrorMessage(error);
 
-      if (error.code === "auth/too-many-requests") {
+      if (
+        error.code ===
+        "auth/too-many-requests"
+      ) {
         message =
           "Too many verification emails were requested. Please wait a while before trying again.";
       }
@@ -207,6 +236,9 @@ export default function LoginScreen({ navigation }) {
         message
       );
     } finally {
+      // Release App.js only after the temporary Firebase session has been
+      // cleaned up. Any stale signed-in auth callback will then be ignored.
+      endTemporaryAuthFlow();
       setResendLoading(false);
     }
   };

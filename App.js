@@ -14,7 +14,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { onAuthStateChanged, signOut } from "firebase/auth";
+import { onAuthStateChanged, signOut, reload } from "firebase/auth";
 import {
   collection,
   getDocs,
@@ -41,6 +41,11 @@ import {
   waitForGoogleAuthFlowToFinish,
   consumeGooglePostSignOutRoute,
 } from "./services/googleAuthService";
+import {
+  isTemporaryAuthFlowInProgress,
+  waitForTemporaryAuthFlowToFinish,
+  consumeTemporaryAuthPostSignOutRoute,
+} from "./services/authFlowService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -808,6 +813,24 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!isMounted) return;
 
+      // Resend-verification temporarily signs an email/password user into
+      // Firebase. That temporary session must never be treated as a real app
+      // login, must never mount Main, and must never start guest listeners.
+      if (isTemporaryAuthFlowInProgress()) {
+        await waitForTemporaryAuthFlowToFinish();
+
+        if (!isMounted) return;
+
+        // The callback may still contain the temporary user even though the
+        // resend flow has already signed that account back out.
+        if (
+          user &&
+          auth.currentUser?.uid !== user.uid
+        ) {
+          return;
+        }
+      }
+
       // Google/Firebase becomes authenticated before googleAuthService has
       // finished checking whether this is a valid H&K login/registration.
       // Wait here so Main and Firestore listeners never see that temporary
@@ -826,13 +849,24 @@ export default function App() {
       }
 
       if (!user) {
-        const googleRoute = consumeGooglePostSignOutRoute();
+        const temporaryRoute =
+          consumeTemporaryAuthPostSignOutRoute();
+
+        const googleRoute =
+          consumeGooglePostSignOutRoute();
+
+        const requestedRoute =
+          temporaryRoute || googleRoute;
+
         clearSignedOutState();
 
-        if (googleRoute) {
-          // Rejected Google Login/Register: stay on the current screen.
-          // Do not show another App-level alert or briefly open Main/Welcome.
-          setInitialRoute((current) => current || googleRoute);
+        if (requestedRoute) {
+          // Temporary verification or rejected Google auth:
+          // stay on Login/Register and do not flash Main/Welcome.
+          setInitialRoute(
+            (current) =>
+              current || requestedRoute
+          );
           setAuthBootstrapping(false);
           return;
         }
@@ -848,6 +882,32 @@ export default function App() {
       setInitialRoute(null);
 
       try {
+        const signedInWithPassword =
+          user.providerData?.some(
+            (provider) =>
+              provider.providerId === "password"
+          );
+
+        // Email/password accounts must always be verified before Main.
+        // This check is independent of Firestore fields, so a missing
+        // emailVerificationRequired flag can never bypass verification.
+        if (signedInWithPassword) {
+          await reload(user);
+
+          if (!isMounted) return;
+
+          if (!user.emailVerified) {
+            setCurrentUser(null);
+            setUserData(null);
+            setReservedRooms([]);
+            setUserOrders([]);
+            setUserRequests([]);
+            setGuestNotifications([]);
+            setInitialRoute("Login");
+            return;
+          }
+        }
+
         const userRef = doc(db, "users", user.uid);
 
         // Email/password registration can also change Firebase Auth slightly
@@ -873,20 +933,6 @@ export default function App() {
         }
 
         const resolvedUserData = userSnap.data();
-
-        // New email/password users cannot enter Main before verification.
-        if (
-          resolvedUserData?.emailVerificationRequired === true &&
-          !user.emailVerified
-        ) {
-          setCurrentUser(null);
-          setUserData(null);
-          setReservedRooms([]);
-          setUserOrders([]);
-          setUserRequests([]);
-          setInitialRoute("Login");
-          return;
-        }
 
         setUserData(resolvedUserData);
         setCurrentUser(user);
