@@ -14,7 +14,7 @@ import { NavigationContainer } from "@react-navigation/native";
 import { createNativeStackNavigator } from "@react-navigation/native-stack";
 import { Ionicons, MaterialCommunityIcons, Feather } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { onAuthStateChanged, signOut, reload } from "firebase/auth";
+import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection,
   getDocs,
@@ -35,7 +35,12 @@ import {
   releaseBookingLocksAndUpdateStatus,
 } from "./services/bookingLockService";
 import { updateActivityStatus } from "./services/activityStatusService";
-import { signOutGoogleSession } from "./services/googleAuthService";
+import {
+  signOutGoogleSession,
+  isGoogleAuthFlowInProgress,
+  waitForGoogleAuthFlowToFinish,
+  consumeGooglePostSignOutRoute,
+} from "./services/googleAuthService";
 
 import HotelHomeScreen from "./pages/HotelHomeScreen";
 import LandingPageScreen from "./pages/LandingPageScreen";
@@ -782,42 +787,71 @@ export default function App() {
   useEffect(() => {
     let isMounted = true;
 
+    const clearSignedOutState = () => {
+      setCurrentUser(null);
+      setUserData(null);
+      setReservedRooms([]);
+      setUserOrders([]);
+      setUserRequests([]);
+      setGuestNotifications([]);
+      banneredNotificationIdsRef.current = new Set();
+      lifecycleRefreshNotificationIdsRef.current = new Set();
+      setRequestStatusBanner(null);
+      setGuestNotificationsVisible(false);
+
+      if (notificationBannerTimerRef.current) {
+        clearTimeout(notificationBannerTimerRef.current);
+        notificationBannerTimerRef.current = null;
+      }
+    };
+
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
       if (!isMounted) return;
 
-      // Stop guest/admin listeners while authentication is being checked.
-      // This prevents the app from briefly using a stale user session.
-      setAuthBootstrapping(true);
-      setInitialRoute(null);
-      setCurrentUser(null);
-      setUserData(null);
+      // Google/Firebase becomes authenticated before googleAuthService has
+      // finished checking whether this is a valid H&K login/registration.
+      // Wait here so Main and Firestore listeners never see that temporary
+      // session.
+      if (isGoogleAuthFlowInProgress()) {
+        await waitForGoogleAuthFlowToFinish();
+
+        if (!isMounted) return;
+
+        // This callback may still hold the Google user that was just rejected
+        // and signed out. Ignore that stale callback; the null-user callback
+        // will handle the rejected session.
+        if (user && auth.currentUser?.uid !== user.uid) {
+          return;
+        }
+      }
 
       if (!user) {
-        setReservedRooms([]);
-        setUserOrders([]);
-        setUserRequests([]);
-        setGuestNotifications([]);
-        banneredNotificationIdsRef.current = new Set();
-        lifecycleRefreshNotificationIdsRef.current = new Set();
-        setRequestStatusBanner(null);
-        setGuestNotificationsVisible(false);
+        const googleRoute = consumeGooglePostSignOutRoute();
+        clearSignedOutState();
 
-        if (notificationBannerTimerRef.current) {
-          clearTimeout(notificationBannerTimerRef.current);
-          notificationBannerTimerRef.current = null;
+        if (googleRoute) {
+          // Rejected Google Login/Register: stay on the current screen.
+          // Do not show another App-level alert or briefly open Main/Welcome.
+          setInitialRoute((current) => current || googleRoute);
+          setAuthBootstrapping(false);
+          return;
         }
 
+        setAuthBootstrapping(true);
+        setInitialRoute(null);
         setInitialRoute("Welcome");
         setAuthBootstrapping(false);
         return;
       }
 
+      setAuthBootstrapping(true);
+      setInitialRoute(null);
+
       try {
         const userRef = doc(db, "users", user.uid);
 
-        // Firebase Auth changes state immediately after registration/sign-in.
-        // Give RegisterScreen/googleAuthService a moment to finish creating
-        // the matching Firestore profile.
+        // Email/password registration can also change Firebase Auth slightly
+        // before RegisterScreen finishes writing /users/{uid}.
         let userSnap = await getDoc(userRef);
 
         for (
@@ -825,9 +859,7 @@ export default function App() {
           attempt < 12 && !userSnap.exists();
           attempt += 1
         ) {
-          await new Promise((resolve) =>
-            setTimeout(resolve, 200)
-          );
+          await new Promise((resolve) => setTimeout(resolve, 200));
 
           if (!isMounted) return;
 
@@ -842,24 +874,19 @@ export default function App() {
 
         const resolvedUserData = userSnap.data();
 
-        // New email/password registrations are marked with this field.
-        // Refresh the Firebase user first so emailVerified is current after
-        // the user clicks the verification link.
+        // New email/password users cannot enter Main before verification.
         if (
-          resolvedUserData?.emailVerificationRequired === true
+          resolvedUserData?.emailVerificationRequired === true &&
+          !user.emailVerified
         ) {
-          await reload(user);
-
-          if (!user.emailVerified) {
-            setReservedRooms([]);
-            setUserOrders([]);
-            setUserRequests([]);
-            setInitialRoute("Login");
-            return;
-          }
+          setCurrentUser(null);
+          setUserData(null);
+          setReservedRooms([]);
+          setUserOrders([]);
+          setUserRequests([]);
+          setInitialRoute("Login");
+          return;
         }
-
-        if (!isMounted) return;
 
         setUserData(resolvedUserData);
         setCurrentUser(user);
@@ -867,19 +894,9 @@ export default function App() {
       } catch (error) {
         console.log("Error fetching user data:", error);
 
-        Alert.alert(
-          "Account Loading Failed",
-          "Your account could not be opened because its H&K profile was not found or could not be loaded."
-        );
-
-        try {
-          await signOut(auth);
-        } catch (_) {}
-
-        if (!isMounted) return;
-
-        setCurrentUser(null);
-        setUserData(null);
+        // Do not show a second user-facing message here. LoginScreen and
+        // RegisterScreen already own Google-auth error messages.
+        clearSignedOutState();
         setInitialRoute("Welcome");
       } finally {
         if (isMounted) {

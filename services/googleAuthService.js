@@ -21,11 +21,16 @@ import { auth, db } from "../FirebaseConfig";
 
 let googleConfigured = false;
 
+// App.js uses these flags to avoid reacting to Firebase's temporary Google
+// auth session before this service has decided whether the account is allowed.
+let googleAuthFlowInProgress = false;
+let googleAuthFlowPromise = null;
+let resolveGoogleAuthFlow = null;
+let googlePostSignOutRoute = null;
+
 function configureGoogleOnce() {
   if (googleConfigured) return;
 
-  // Reads the Web OAuth client ID from google-services.json on Android
-  // and GoogleService-Info.plist on iOS.
   GoogleOneTapSignIn.configure({
     webClientId: "autoDetect",
     offlineAccess: false,
@@ -35,15 +40,37 @@ function configureGoogleOnce() {
   googleConfigured = true;
 }
 
-async function createGuestProfile(
-  firebaseUser,
-  googleUser = null
-) {
-  const userRef = doc(
-    db,
-    "users",
-    firebaseUser.uid
-  );
+function beginGoogleAuthFlow() {
+  googleAuthFlowInProgress = true;
+  googleAuthFlowPromise = new Promise((resolve) => {
+    resolveGoogleAuthFlow = resolve;
+  });
+}
+
+function endGoogleAuthFlow() {
+  googleAuthFlowInProgress = false;
+  if (resolveGoogleAuthFlow) resolveGoogleAuthFlow();
+  resolveGoogleAuthFlow = null;
+  googleAuthFlowPromise = null;
+}
+
+export function isGoogleAuthFlowInProgress() {
+  return googleAuthFlowInProgress;
+}
+
+export async function waitForGoogleAuthFlowToFinish() {
+  if (!googleAuthFlowInProgress || !googleAuthFlowPromise) return;
+  await googleAuthFlowPromise;
+}
+
+export function consumeGooglePostSignOutRoute() {
+  const route = googlePostSignOutRoute;
+  googlePostSignOutRoute = null;
+  return route;
+}
+
+async function createGuestProfile(firebaseUser, googleUser = null) {
+  const userRef = doc(db, "users", firebaseUser.uid);
 
   const profile = {
     uid: firebaseUser.uid,
@@ -70,64 +97,46 @@ async function createGuestProfile(
   return profile;
 }
 
-async function clearGoogleLoginSession() {
-  // Clear the Firebase session first so App.js no longer considers the
-  // Google account authenticated.
+async function clearRejectedGoogleSession(routeName) {
+  // Tell App.js which screen should stay visible after the forced sign-out.
+  googlePostSignOutRoute = routeName;
+
   try {
     await signOut(auth);
   } catch (error) {
-    console.log(
-      "Firebase sign-out skipped:",
-      error?.message || error
-    );
+    console.log("Firebase sign-out skipped:", error?.message || error);
   }
 
-  // Also clear the native Google session/account selection.
   try {
     configureGoogleOnce();
     await GoogleOneTapSignIn.signOut();
   } catch (error) {
-    console.log(
-      "Google native sign-out skipped:",
-      error?.message || error
-    );
+    console.log("Google native sign-out skipped:", error?.message || error);
   }
 }
 
-export async function continueWithGoogle({
-  mode = "login",
-} = {}) {
+export async function continueWithGoogle({ mode = "login" } = {}) {
   configureGoogleOnce();
 
   if (!["login", "register"].includes(mode)) {
-    throw new Error(
-      "Invalid Google authentication mode."
-    );
+    throw new Error("Invalid Google authentication mode.");
   }
 
+  beginGoogleAuthFlow();
+
   try {
-    // On iOS this resolves immediately; on Android it checks Google Play
-    // services before opening the Google account UI.
     await GoogleOneTapSignIn.checkPlayServices();
 
     let response;
 
     if (mode === "register") {
-      // Account-picker / sign-up-oriented flow.
-      response =
-        await GoogleOneTapSignIn.createAccount();
+      response = await GoogleOneTapSignIn.createAccount();
 
-      if (
-        isNoSavedCredentialFoundResponse(response)
-      ) {
-        response =
-          await GoogleOneTapSignIn.presentExplicitSignIn();
+      if (isNoSavedCredentialFoundResponse(response)) {
+        response = await GoogleOneTapSignIn.presentExplicitSignIn();
       }
     } else {
-      // Login should only authenticate a Google account.
-      // It must NOT create an H&K Firestore user profile.
-      response =
-        await GoogleOneTapSignIn.presentExplicitSignIn();
+      response = await GoogleOneTapSignIn.presentExplicitSignIn();
     }
 
     if (isCancelledResponse(response)) {
@@ -139,15 +148,10 @@ export async function continueWithGoogle({
     }
 
     if (!isSuccessResponse(response)) {
-      throw new Error(
-        "Google Sign-In did not return a usable account."
-      );
+      throw new Error("Google Sign-In did not return a usable account.");
     }
 
-    const {
-      idToken,
-      user: googleUser,
-    } = response.data;
+    const { idToken, user: googleUser } = response.data;
 
     if (!idToken) {
       throw new Error(
@@ -155,46 +159,29 @@ export async function continueWithGoogle({
       );
     }
 
-    // Exchange Google's ID token for a Firebase Authentication session.
-    const googleCredential =
-      GoogleAuthProvider.credential(idToken);
+    const googleCredential = GoogleAuthProvider.credential(idToken);
 
-    const userCredential =
-      await signInWithCredential(
-        auth,
-        googleCredential
-      );
-
-    const firebaseUser =
-      userCredential.user;
-
-    const userRef = doc(
-      db,
-      "users",
-      firebaseUser.uid
+    // Firebase Auth changes state here. App.js now waits until this service
+    // finishes deciding whether the H&K account is accepted or rejected.
+    const userCredential = await signInWithCredential(
+      auth,
+      googleCredential
     );
 
-    const userSnap =
-      await getDoc(userRef);
+    const firebaseUser = userCredential.user;
+    const userRef = doc(db, "users", firebaseUser.uid);
+    const userSnap = await getDoc(userRef);
 
-    // =========================================================
-    // LOGIN MODE
-    // =========================================================
-    // Firebase/Google authentication alone is NOT enough to count as
-    // an H&K registration. The Firestore profile must already exist.
+    // LOGIN: the H&K profile must already exist. Never create it here.
     if (mode === "login") {
       if (!userSnap.exists()) {
-        await clearGoogleLoginSession();
+        await clearRejectedGoogleSession("Login");
 
-        const notRegisteredError =
-          new Error(
-            "This Google account is not registered in H&K Home Kafe. Please register first."
-          );
-
-        notRegisteredError.code =
-          "google/account-not-registered";
-
-        throw notRegisteredError;
+        const error = new Error(
+          "This Google account is not registered in H&K Home Kafe. Please register first."
+        );
+        error.code = "google/account-not-registered";
+        throw error;
       }
 
       return {
@@ -205,31 +192,19 @@ export async function continueWithGoogle({
       };
     }
 
-    // =========================================================
-    // REGISTER MODE
-    // =========================================================
-    // If the H&K profile already exists, this account was previously
-    // registered and should use Login instead.
+    // REGISTER: if it already exists, sign back out and stay on Register.
     if (userSnap.exists()) {
-      await clearGoogleLoginSession();
+      await clearRejectedGoogleSession("Register");
 
-      const alreadyRegisteredError =
-        new Error(
-          "This Google account is already registered in H&K Home Kafe. Please log in instead."
-        );
-
-      alreadyRegisteredError.code =
-        "google/account-already-registered";
-
-      throw alreadyRegisteredError;
+      const error = new Error(
+        "This Google account is already registered in H&K Home Kafe. Please log in instead."
+      );
+      error.code = "google/account-already-registered";
+      throw error;
     }
 
-    // ONLY Register mode is allowed to create /users/{uid}.
-    const profile =
-      await createGuestProfile(
-        firebaseUser,
-        googleUser
-      );
+    // Only Register mode is allowed to create /users/{uid}.
+    const profile = await createGuestProfile(firebaseUser, googleUser);
 
     return {
       cancelled: false,
@@ -239,10 +214,7 @@ export async function continueWithGoogle({
     };
   } catch (error) {
     if (isErrorWithCode(error)) {
-      if (
-        error.code ===
-        statusCodes.SIGN_IN_CANCELLED
-      ) {
+      if (error.code === statusCodes.SIGN_IN_CANCELLED) {
         return {
           cancelled: true,
           created: false,
@@ -250,33 +222,27 @@ export async function continueWithGoogle({
         };
       }
 
-      if (
-        error.code ===
-        statusCodes.DEVELOPER_ERROR
-      ) {
+      if (error.code === statusCodes.DEVELOPER_ERROR) {
         const setupError = new Error(
           "Google Sign-In configuration does not match this Android build. Check the Android package name, EAS keystore SHA-1, Firebase Android app, and google-services.json."
         );
-        setupError.code =
-          "google/developer-error";
+        setupError.code = "google/developer-error";
         throw setupError;
       }
 
-      if (
-        error.code ===
-        statusCodes.PLAY_SERVICES_NOT_AVAILABLE
-      ) {
-        const playServicesError =
-          new Error(
-            "Google Play Services is unavailable or needs to be updated on this device."
-          );
-        playServicesError.code =
-          "google/play-services-unavailable";
+      if (error.code === statusCodes.PLAY_SERVICES_NOT_AVAILABLE) {
+        const playServicesError = new Error(
+          "Google Play Services is unavailable or needs to be updated on this device."
+        );
+        playServicesError.code = "google/play-services-unavailable";
         throw playServicesError;
       }
     }
 
     throw error;
+  } finally {
+    // Release App.js after this Google decision is complete.
+    endGoogleAuthFlow();
   }
 }
 
@@ -285,11 +251,6 @@ export async function signOutGoogleSession() {
     configureGoogleOnce();
     await GoogleOneTapSignIn.signOut();
   } catch (error) {
-    // Firebase logout in App.js should still continue even if Google has no
-    // active native session.
-    console.log(
-      "Google native sign-out skipped:",
-      error?.message || error
-    );
+    console.log("Google native sign-out skipped:", error?.message || error);
   }
 }
