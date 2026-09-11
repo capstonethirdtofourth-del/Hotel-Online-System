@@ -25,9 +25,9 @@ const GOLD = "#D8B26A";
 const SOFT_GOLD = "#F5E4BF";
 const MUTED_BROWN = "#7B604D";
 const LIGHT_BORDER = "#E6D2AA";
-const MAX_ADULTS = 10;
-const MAX_CHILDREN = 10;
-const MAX_PETS = 5;
+const MAX_ADULTS = 5;
+const MAX_CHILDREN = 5;
+const MAX_PETS = 2;
 
 const ADD_ONS = [
   {
@@ -95,6 +95,14 @@ function formatTime(date) {
   const hours = String(date.getHours()).padStart(2, "0");
   const minutes = String(date.getMinutes()).padStart(2, "0");
   return `${hours}:${minutes}`;
+}
+
+function formatDisplayTime(date) {
+  return date.toLocaleTimeString("en-PH", {
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  });
 }
 
 function getNightDifference(checkIn, checkOut) {
@@ -727,7 +735,7 @@ export default function BookingDetailsModal({
               onPress={() => setShowTimePicker(true)}
             >
               <Text style={styles.label}>Arrival time</Text>
-              <Text style={styles.selectValue}>{formatTime(checkInTime)}</Text>
+              <Text style={styles.selectValue}>{formatDisplayTime(checkInTime)}</Text>
             </Pressable>
 
             {showTimePicker && (
@@ -735,6 +743,7 @@ export default function BookingDetailsModal({
                 value={checkInTime}
                 mode="time"
                 display={Platform.OS === "ios" ? "spinner" : "default"}
+                is24Hour={false}
                 onChange={handleTimeChange}
               />
             )}

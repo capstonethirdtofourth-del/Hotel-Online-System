@@ -115,6 +115,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const [room360Visible, setRoom360Visible] = useState(false);
   const [roomFor360, setRoomFor360] = useState(null);
   const [galleryIndex, setGalleryIndex] = useState(0);
+  const [previewPhoto, setPreviewPhoto] = useState(null);
 
   const [ratingModalVisible, setRatingModalVisible] = useState(false);
   const [selectedRating, setSelectedRating] = useState(0);
@@ -215,6 +216,7 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const closeRoomModal = () => {
     setSelectedRoom(null);
     setGalleryIndex(0);
+    setPreviewPhoto(null);
     setRatingModalVisible(false);
     setSelectedRating(0);
     setUserRoomRating(null);
@@ -402,6 +404,15 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
   const closeRoom360Preview = () => {
     setRoom360Visible(false);
     setRoomFor360(null);
+  };
+
+  const openPhotoPreview = (photo) => {
+    if (!photo?.source) return;
+    setPreviewPhoto(photo);
+  };
+
+  const closePhotoPreview = () => {
+    setPreviewPhoto(null);
   };
 
   const getRoomGallery = (room) => {
@@ -604,9 +615,11 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                     }}
                   >
                     {selectedRoomGallery.map((photo) => (
-                      <View
+                      <TouchableOpacity
                         key={photo.key}
                         style={[styles.gallerySlide, { width: galleryWidth }]}
+                        activeOpacity={0.92}
+                        onPress={() => openPhotoPreview(photo)}
                       >
                         <Image
                           source={photo.source}
@@ -619,7 +632,18 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
                             {photo.label}
                           </Text>
                         </View>
-                      </View>
+
+                        <View style={styles.photoZoomHint}>
+                          <Ionicons
+                            name="expand-outline"
+                            size={17}
+                            color="#FFF8E7"
+                          />
+                          <Text style={styles.photoZoomHintText}>
+                            Tap to view
+                          </Text>
+                        </View>
+                      </TouchableOpacity>
                     ))}
                   </ScrollView>
 
@@ -762,6 +786,46 @@ export default function HotelHomeScreen({ onBookRoom, roomStatusRefreshKey }) {
         room={roomFor360}
         onClose={closeRoom360Preview}
       />
+
+      <Modal
+        visible={!!previewPhoto}
+        transparent
+        animationType="fade"
+        statusBarTranslucent
+        onRequestClose={closePhotoPreview}
+      >
+        <View style={styles.photoPreviewOverlay}>
+          <TouchableOpacity
+            style={styles.photoPreviewClose}
+            onPress={closePhotoPreview}
+            activeOpacity={0.85}
+            accessibilityLabel="Close photo preview"
+          >
+            <Ionicons
+              name="close"
+              size={30}
+              color="#FFFFFF"
+            />
+          </TouchableOpacity>
+
+          {previewPhoto ? (
+            <Image
+              source={previewPhoto.source}
+              style={styles.photoPreviewImage}
+              resizeMode="contain"
+            />
+          ) : null}
+
+          <View style={styles.photoPreviewFooter}>
+            <Text style={styles.photoPreviewLabel}>
+              {previewPhoto?.label || "Room Photo"}
+            </Text>
+            <Text style={styles.photoPreviewHint}>
+              Tap × to return to the room
+            </Text>
+          </View>
+        </View>
+      </Modal>
 
       <Modal
         visible={ratingModalVisible}
@@ -1012,6 +1076,23 @@ const styles = StyleSheet.create({
     width: "100%",
     height: "100%",
   },
+  photoZoomHint: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: "rgba(53, 23, 6, 0.82)",
+    borderRadius: 12,
+    paddingHorizontal: 9,
+    paddingVertical: 6,
+  },
+  photoZoomHintText: {
+    color: "#FFF8E7",
+    fontSize: 11,
+    fontWeight: "800",
+    marginLeft: 4,
+  },
   galleryTypeBadge: {
     position: "absolute",
     top: 10,
@@ -1210,5 +1291,44 @@ const styles = StyleSheet.create({
     color: "#7a6d63",
     fontSize: 14,
     fontWeight: "700",
+  },
+  photoPreviewOverlay: {
+    flex: 1,
+    backgroundColor: "rgba(0, 0, 0, 0.96)",
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  photoPreviewImage: {
+    width: "100%",
+    height: "78%",
+  },
+  photoPreviewClose: {
+    position: "absolute",
+    top: 48,
+    right: 18,
+    zIndex: 20,
+    width: 44,
+    height: 44,
+    borderRadius: 22,
+    backgroundColor: "rgba(0, 0, 0, 0.55)",
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  photoPreviewFooter: {
+    position: "absolute",
+    left: 20,
+    right: 20,
+    bottom: 34,
+    alignItems: "center",
+  },
+  photoPreviewLabel: {
+    color: "#FFFFFF",
+    fontSize: 15,
+    fontWeight: "800",
+  },
+  photoPreviewHint: {
+    color: "rgba(255,255,255,0.72)",
+    fontSize: 12,
+    marginTop: 4,
   },
 });
